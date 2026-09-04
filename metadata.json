@@ -1,0 +1,7 @@
+{
+  "name": "Adaptive",
+  "description": "تطبيق Adaptive الذكي للإنتاجية والتركيز وإدارة المهام والجدول الأسبوعي والمنبه الذكي والمزامنة السحابية.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
