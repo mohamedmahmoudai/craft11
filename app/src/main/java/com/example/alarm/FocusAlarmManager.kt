@@ -2,6 +2,7 @@ package com.example.alarm
 
 import android.app.AlarmManager
 import android.app.NotificationChannel
+import android.app.Notification
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
@@ -10,7 +11,9 @@ import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.os.Build
 import android.util.Log
+import androidx.core.app.NotificationCompat
 import com.example.MainActivity
+import com.example.R
 import com.example.data.local.entity.Task
 import java.util.Calendar
 
@@ -180,6 +183,63 @@ class FocusAlarmManager(private val context: Context) {
         FocusAlarmSoundManager.stopAlarm()
     }
 
+    /**
+     * Schedules background timer completion alarm to wake up system and fire completion notification & DB updates
+     */
+    fun scheduleTimerCompletion(taskId: String, taskTitle: String, plannedDurationMinutes: Int, completionMillis: Long) {
+        val intent = Intent(context, FocusAlarmReceiver::class.java).apply {
+            action = ACTION_TIMER_COMPLETED
+            putExtra(EXTRA_TASK_ID, taskId)
+            putExtra(EXTRA_TASK_TITLE, taskTitle)
+            putExtra(EXTRA_DURATION_MINUTES, plannedDurationMinutes)
+        }
+        val requestCode = (taskId + "_timer_complete").hashCode()
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
+        val pendingIntent = PendingIntent.getBroadcast(context, requestCode, intent, flags)
+        setAlarmExact(completionMillis, pendingIntent)
+        Log.d(TAG, "Scheduled TIMER_COMPLETION for task '$taskTitle' at $completionMillis")
+    }
+
+    /**
+     * Cancels any pending timer completion alarm
+     */
+    fun cancelTimerCompletion(taskId: String) {
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
+        val intent = Intent(context, FocusAlarmReceiver::class.java).apply {
+            action = ACTION_TIMER_COMPLETED
+        }
+        val requestCode = (taskId + "_timer_complete").hashCode()
+        val pendingIntent = PendingIntent.getBroadcast(context, requestCode, intent, flags or PendingIntent.FLAG_NO_CREATE)
+        if (pendingIntent != null) {
+            alarmManager?.cancel(pendingIntent)
+            pendingIntent.cancel()
+        }
+    }
+
+    /**
+     * Triggers the local notification: "مبروك! لقد أنجزت مهمة [Task Title] 🎉"
+     */
+    fun showTimerCompletionNotification(taskId: String, taskTitle: String) {
+        val contentIntent = Intent(context, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
+        val pendingContentIntent = PendingIntent.getActivity(context, taskId.hashCode() + 999, contentIntent, flags)
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_ALARM_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("إنجاز جلسة التركيز 🎉")
+            .setContentText("مبروك! لقد أنجزت مهمة $taskTitle 🎉")
+            .setStyle(NotificationCompat.BigTextStyle().bigText("مبروك! لقد أنجزت مهمة $taskTitle 🎉\nتم إكمال المهمة واحتساب وقت التركيز وتحديث التقدم بنجاح."))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pendingContentIntent)
+            .setDefaults(Notification.DEFAULT_ALL)
+            .build()
+
+        notificationManager?.notify((taskId + "_completion").hashCode(), notification)
+    }
+
     private fun setAlarmExact(triggerAtMillis: Long, pendingIntent: PendingIntent) {
         if (alarmManager == null) return
 
@@ -242,6 +302,7 @@ class FocusAlarmManager(private val context: Context) {
         const val ACTION_START_TASK = "com.example.focuscraft.ACTION_START_TASK"
         const val ACTION_SNOOZE_ALARM = "com.example.focuscraft.ACTION_SNOOZE_ALARM"
         const val ACTION_DISMISS_ALARM = "com.example.focuscraft.ACTION_DISMISS_ALARM"
+        const val ACTION_TIMER_COMPLETED = "com.example.focuscraft.ACTION_TIMER_COMPLETED"
 
         const val EXTRA_TASK_ID = "EXTRA_TASK_ID"
         const val EXTRA_TASK_TITLE = "EXTRA_TASK_TITLE"

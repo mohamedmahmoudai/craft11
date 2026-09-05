@@ -88,6 +88,7 @@ import com.example.ui.screens.MoreScreen
 import com.example.ui.screens.ProjectsScreen
 import com.example.ui.screens.ScheduleScreen
 import com.example.ui.screens.SmartAlarmScreen
+import com.example.ui.screens.SplashScreen
 import com.example.ui.theme.FocusCraftTheme
 import com.example.util.BatteryOptimizationHelper
 import com.example.viewmodel.FocusViewModel
@@ -98,13 +99,16 @@ fun FocusCraftApp(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showBatteryRationaleDialog by remember { mutableStateOf(false) }
+    var showSplashScreen by remember { mutableStateOf(true) }
     val context = androidx.compose.ui.platform.LocalContext.current
 
     // System Permissions & Hardening Handler on App Startup
     SystemPermissionsHandler()
 
     FocusCraftTheme(darkTheme = uiState.isDarkMode) {
-        if (!uiState.isLoggedIn) {
+        if (showSplashScreen) {
+            SplashScreen(onSplashFinished = { showSplashScreen = false })
+        } else if (!uiState.isLoggedIn) {
             // Firebase Auth / Login Screen
             LoginScreen(
                 onGoogleSignIn = { viewModel.signInWithGoogle(context) },
@@ -213,6 +217,14 @@ fun FocusCraftApp(
                                     },
                                     onAddNewTaskAtTime = {
                                         viewModel.setShowQuickAddSheet(true)
+                                    },
+                                    onImportTask = { title, time, dur, fixed ->
+                                        viewModel.addTask(
+                                            title = title,
+                                            time = time,
+                                            durationMinutes = dur,
+                                            isFixed = fixed
+                                        )
                                     }
                                 )
                             }
@@ -241,12 +253,24 @@ fun FocusCraftApp(
                                 MoreScreen(
                                     userName = uiState.userName,
                                     userEmail = uiState.userEmail,
+                                    userPhotoUrl = uiState.userPhotoUrl,
                                     isGuestMode = uiState.isGuestMode,
                                     isDarkMode = uiState.isDarkMode,
                                     isSyncingCloud = uiState.isSyncingCloud,
                                     syncSuccessMessage = uiState.syncSuccessMessage,
                                     reviewStats = uiState.reviewStats,
                                     tasks = uiState.tasks,
+                                    sleepBedtime = uiState.sleepBedtime,
+                                    sleepWakeTime = uiState.sleepWakeTime,
+                                    workStartTime = uiState.workStartTime,
+                                    workEndTime = uiState.workEndTime,
+                                    onUpdateSleepSchedule = { bedtime, wakeTime ->
+                                        viewModel.updateSleepSchedule(bedtime, wakeTime)
+                                    },
+                                    onUpdateWorkWindow = { startTime, endTime ->
+                                        viewModel.updateWorkWindow(startTime, endTime)
+                                    },
+                                    onUpdateUserName = { viewModel.updateUserName(it) },
                                     onToggleTheme = { viewModel.toggleDarkMode() },
                                     onGoogleSignIn = { viewModel.signInWithGoogle(context) },
                                     onSyncToCloud = { viewModel.syncToCloud() },

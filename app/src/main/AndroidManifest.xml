@@ -49,6 +49,7 @@
                 <action android:name="com.example.focuscraft.ACTION_START_TASK" />
                 <action android:name="com.example.focuscraft.ACTION_SNOOZE_ALARM" />
                 <action android:name="com.example.focuscraft.ACTION_DISMISS_ALARM" />
+                <action android:name="com.example.focuscraft.ACTION_TIMER_COMPLETED" />
             </intent-filter>
         </receiver>
 

@@ -21,8 +21,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddCircleOutline
+import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.EditCalendar
@@ -34,6 +38,7 @@ import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -60,14 +65,17 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.rememberCoroutineScope
 import com.example.model.BlockColor
 import com.example.model.DailyCapacityState
 import com.example.model.TimelineItem
+import com.example.ui.components.ImportScheduleReviewDialog
 import com.example.ui.components.WhackaFlatTextField
 import com.example.ui.theme.WhackaAmber
 import com.example.ui.theme.WhackaEmerald
@@ -75,7 +83,10 @@ import com.example.ui.theme.WhackaPrimaryAccent
 import com.example.ui.theme.WhackaPrimaryShadow
 import com.example.ui.theme.WhackaRed
 import com.example.ui.theme.WhackaSecondaryAccent
+import com.example.util.ImportedScheduleDraft
+import com.example.util.ScheduleOcrParser
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -91,8 +102,37 @@ fun ScheduleScreen(
     onDeleteTask: (String) -> Unit = {},
     onRescheduleTask: (String, String, String?, String?, Int) -> Unit = { _, _, _, _, _ -> },
     onAddNewTaskAtTime: (Float) -> Unit = {},
+    onImportTask: (String, String, Int, Boolean) -> Unit = { _, _, _, _ -> },
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    var isScanningOcr by remember { mutableStateOf(false) }
+    var ocrDrafts by remember { mutableStateOf<List<ImportedScheduleDraft>>(emptyList()) }
+    var showOcrReviewDialog by remember { mutableStateOf(false) }
+    var scanErrorMessage by remember { mutableStateOf<String?>(null) }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            isScanningOcr = true
+            scanErrorMessage = null
+            coroutineScope.launch {
+                val result = ScheduleOcrParser.recognizeTextFromUri(context, uri)
+                result.onSuccess { visionText ->
+                    val drafts = ScheduleOcrParser.parseScheduleItems(visionText)
+                    ocrDrafts = drafts
+                    showOcrReviewDialog = true
+                    isScanningOcr = false
+                }.onFailure { error ->
+                    scanErrorMessage = "تعذر قراءة الصورة: ${error.localizedMessage ?: "خطأ غير متوقع"}"
+                    isScanningOcr = false
+                }
+            }
+        }
+    }
+
     val scrollState = rememberScrollState()
 
     // State for bottom sheet
@@ -158,27 +198,65 @@ fun ScheduleScreen(
                     color = MaterialTheme.colorScheme.onSurface
                 )
 
-                // Capacity status pill (50 shape)
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(
-                            if (dailyCapacity.isOverbooked) WhackaAmber.copy(alpha = 0.15f)
-                            else WhackaPrimaryAccent.copy(alpha = 0.12f)
-                        )
-                        .border(
-                            1.dp,
-                            if (dailyCapacity.isOverbooked) WhackaAmber.copy(alpha = 0.5f)
-                            else WhackaPrimaryAccent.copy(alpha = 0.4f),
-                            RoundedCornerShape(50)
-                        )
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text(
-                        text = "محجوز: ${dailyCapacity.bookedTimeFormatted}",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = if (dailyCapacity.isOverbooked) WhackaAmber else WhackaPrimaryAccent
-                    )
+                    // OCR Schedule Import Button
+                    Surface(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .clickable {
+                                photoPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            }
+                            .testTag("ocr_schedule_import_btn"),
+                        shape = RoundedCornerShape(50),
+                        color = WhackaPrimaryAccent.copy(alpha = 0.12f),
+                        border = BorderStroke(1.dp, WhackaPrimaryAccent.copy(alpha = 0.35f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AddPhotoAlternate,
+                                contentDescription = "استيراد صورة",
+                                tint = WhackaPrimaryAccent,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Text(
+                                text = "استيراد صورة",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = WhackaPrimaryAccent
+                            )
+                        }
+                    }
+
+                    // Capacity status pill (50 shape)
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(
+                                if (dailyCapacity.isOverbooked) WhackaAmber.copy(alpha = 0.15f)
+                                else WhackaPrimaryAccent.copy(alpha = 0.12f)
+                            )
+                            .border(
+                                1.dp,
+                                if (dailyCapacity.isOverbooked) WhackaAmber.copy(alpha = 0.5f)
+                                else WhackaPrimaryAccent.copy(alpha = 0.4f),
+                                RoundedCornerShape(50)
+                            )
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = "محجوز: ${dailyCapacity.bookedTimeFormatted}",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = if (dailyCapacity.isOverbooked) WhackaAmber else WhackaPrimaryAccent
+                        )
+                    }
                 }
             }
 
@@ -690,6 +768,68 @@ fun ScheduleScreen(
                 }
             },
             containerColor = MaterialTheme.colorScheme.surface
+        )
+    }
+
+    // OCR Review Dialog
+    if (showOcrReviewDialog) {
+        ImportScheduleReviewDialog(
+            initialDrafts = ocrDrafts,
+            onDismiss = { showOcrReviewDialog = false },
+            onConfirmImport = { selectedDrafts ->
+                selectedDrafts.forEach { draft ->
+                    onImportTask(draft.title, draft.timeText, draft.durationMinutes, draft.isFixed)
+                }
+                showOcrReviewDialog = false
+            }
+        )
+    }
+
+    // OCR Scanning Progress Dialog
+    if (isScanningOcr) {
+        AlertDialog(
+            onDismissRequest = {},
+            confirmButton = {},
+            title = {
+                Text(
+                    text = "جارٍ استيراد الجدول من الصورة",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                )
+            },
+            text = {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(32.dp),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "يتم تحليل النص عبر ML Kit واستخراج الأوقات والمواعيد...",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            },
+            shape = RoundedCornerShape(20.dp)
+        )
+    }
+
+    // Scan Error Dialog
+    if (scanErrorMessage != null) {
+        AlertDialog(
+            onDismissRequest = { scanErrorMessage = null },
+            confirmButton = {
+                TextButton(onClick = { scanErrorMessage = null }) {
+                    Text("حسناً")
+                }
+            },
+            title = { Text("تنبيه") },
+            text = { Text(scanErrorMessage ?: "") },
+            shape = RoundedCornerShape(20.dp)
         )
     }
 }

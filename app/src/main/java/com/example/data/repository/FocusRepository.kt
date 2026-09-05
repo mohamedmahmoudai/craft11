@@ -580,6 +580,12 @@ class FocusRepository(
             firestore?.collection("users")?.document(uid)
                 ?.collection("tasks")?.document(task.id)
                 ?.set(taskMap, SetOptions.merge())
+
+            if (task.isFixed) {
+                firestore?.collection("users")?.document(uid)
+                    ?.collection("events")?.document(task.id)
+                    ?.set(taskMap, SetOptions.merge())
+            }
         } catch (e: Exception) {
             Log.d("FocusRepository", "Firestore write skipped: ${e.message}")
         }
@@ -590,6 +596,9 @@ class FocusRepository(
         try {
             firestore?.collection("users")?.document(uid)
                 ?.collection("tasks")?.document(taskId)
+                ?.delete()
+            firestore?.collection("users")?.document(uid)
+                ?.collection("events")?.document(taskId)
                 ?.delete()
         } catch (e: Exception) {
             Log.d("FocusRepository", "Firestore delete skipped: ${e.message}")
@@ -665,159 +674,45 @@ class FocusRepository(
         }
     }
 
+    fun syncSettingsToCloud(
+        uid: String,
+        userName: String,
+        email: String? = null,
+        photoUrl: String? = null
+    ) {
+        try {
+            val settingsMap = hashMapOf(
+                "userName" to userName,
+                "email" to (email ?: ""),
+                "photoUrl" to (photoUrl ?: ""),
+                "updatedAt" to System.currentTimeMillis()
+            )
+            firestore?.collection("users")?.document(uid)
+                ?.collection("settings")?.document("profile")
+                ?.set(settingsMap, SetOptions.merge())
+        } catch (e: Exception) {
+            Log.d("FocusRepository", "Firestore settings write skipped: ${e.message}")
+        }
+    }
+
     suspend fun checkAndSeedInitialData() {
-        if (taskDao.getTaskCount() == 0) {
-            val now = System.currentTimeMillis()
-            val initialTasks = listOf(
-                Task(
-                    id = "t1",
-                    title = "مشروع التخرج",
-                    subtitle = "تم الإنجاز - 09:00 ص",
-                    scheduledTime = "09:00 - 11:00 ص",
-                    durationMinutes = 120,
-                    isCompleted = true,
-                    date = now,
-                    categoryColor = "TEAL",
-                    isFixed = false,
-                    startTime = "09:00",
-                    endTime = "11:00"
-                ),
-                Task(
-                    id = "t2",
-                    title = "مراجعة تقرير الربع الثالث",
-                    subtitle = "كتابة المقال التقني",
-                    scheduledTime = "11:30 - 01:00 م",
-                    durationMinutes = 90,
-                    isCompleted = false,
-                    date = now,
-                    categoryColor = "ORANGE",
-                    isFixed = false,
-                    startTime = "11:30",
-                    endTime = "13:00"
-                ),
-                Task(
-                    id = "t3",
-                    title = "محاضرة الرياضيات (قاعة 402)",
-                    subtitle = "حدث ثابت - جامعة",
-                    scheduledTime = "02:00 - 03:30 م",
-                    durationMinutes = 90,
-                    isCompleted = false,
-                    date = now,
-                    categoryColor = "GREEN",
-                    isFixed = true,
-                    startTime = "14:00",
-                    endTime = "15:30"
-                ),
-                Task(
-                    id = "t4",
-                    title = "تدريب رياضي",
-                    subtitle = "النادي الصحي",
-                    scheduledTime = "06:00 - 07:30 م",
-                    durationMinutes = 90,
-                    isCompleted = false,
-                    date = now + 86400000L,
-                    categoryColor = "TEAL",
-                    isFixed = false
-                ),
-                Task(
-                    id = "t5",
-                    title = "مذاكرة هياكل البيانات",
-                    subtitle = "حل مسائل الخوارزميات",
-                    scheduledTime = "08:00 - 09:30 م",
-                    durationMinutes = 90,
-                    isCompleted = false,
-                    date = now + 86400000L,
-                    categoryColor = "ORANGE",
-                    isFixed = false
-                )
-            )
-            taskDao.insertTasks(initialTasks)
-        }
-
-        if (projectDao.getProjectCount() == 0) {
-            val now = System.currentTimeMillis()
-            val initialProjects = listOf(
-                Project(
-                    id = "p1",
-                    name = "تطوير تطبيق واكا (Whacka)",
-                    description = "إعادة تصميم واجهة المستخدم ونظام الإنتاجية المتكامل",
-                    color = "TEAL",
-                    progress = 0.75f,
-                    status = "ACTIVE",
-                    taskCount = 8,
-                    completedTaskCount = 6,
-                    createdAt = now
-                ),
-                Project(
-                    id = "p2",
-                    name = "اللياقة والرياضة البدنية",
-                    description = "تمارين رياضية يومية وجدول صحي وتغذية",
-                    color = "GREEN",
-                    progress = 0.40f,
-                    status = "ACTIVE",
-                    taskCount = 5,
-                    completedTaskCount = 2,
-                    createdAt = now
-                ),
-                Project(
-                    id = "p3",
-                    name = "قراءة ومراجعة الكتب",
-                    description = "قراءة كتب الإنتاجية والتركيز العميق وإدارة الوقت",
-                    color = "ORANGE",
-                    progress = 0.20f,
-                    status = "ACTIVE",
-                    taskCount = 4,
-                    completedTaskCount = 1,
-                    createdAt = now
-                )
-            )
-            projectDao.insertProjects(initialProjects)
-        }
-
-        if (goalDao.getGoalCount() == 0) {
-            val now = System.currentTimeMillis()
-            val initialGoals = listOf(
-                Goal(
-                    id = "g1",
-                    title = "إتمام 20 جلسة تركيز هذا الشهر",
-                    description = "بناء عادة التركيز العميق بدون مقاطعات يومياً",
-                    category = "إنتاجية",
-                    targetCount = 20,
-                    currentCount = 8,
-                    progress = 0.40f,
-                    deadline = "نهاية الشهر",
-                    status = "ACTIVE",
-                    color = "TEAL",
-                    createdAt = now
-                ),
-                Goal(
-                    id = "g2",
-                    title = "قراءة 3 كتب في تطوير الذات",
-                    description = "إتمام كتاب التركيز الفائق والعادات الذرية",
-                    category = "تطوير الذات",
-                    targetCount = 3,
-                    currentCount = 1,
-                    progress = 0.33f,
-                    deadline = "بعد أسبوعين",
-                    status = "ACTIVE",
-                    color = "ORANGE",
-                    createdAt = now
-                ),
-                Goal(
-                    id = "g3",
-                    title = "المشي 10,000 خطوة يومياً",
-                    description = "المحافظة على النشاط البدني والصحة العامة",
-                    category = "صحة",
-                    targetCount = 30,
-                    currentCount = 14,
-                    progress = 0.47f,
-                    deadline = "مستمر",
-                    status = "ACTIVE",
-                    color = "GREEN",
-                    createdAt = now
-                )
-            )
-            goalDao.insertGoals(initialGoals)
+        // Zero dummy data: Clean initial state
+        // Purge legacy mock data if present from older versions
+        try {
+            val legacyTaskIds = listOf("t1", "t2", "t3", "t4", "t5")
+            for (id in legacyTaskIds) {
+                taskDao.deleteTaskById(id)
+            }
+            val legacyProjectIds = listOf("p1", "p2", "p3")
+            for (id in legacyProjectIds) {
+                projectDao.deleteProjectById(id)
+            }
+            val legacyGoalIds = listOf("g1", "g2", "g3")
+            for (id in legacyGoalIds) {
+                goalDao.deleteGoalById(id)
+            }
+        } catch (e: Exception) {
+            Log.d(TAG, "Legacy mock data cleanup skipped: ${e.message}")
         }
     }
 

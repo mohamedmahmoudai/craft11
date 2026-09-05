@@ -38,6 +38,9 @@ import com.example.model.TaskItem
 import com.example.model.TimeBlock
 import com.example.model.TimelineItem
 import com.example.model.TimerStatus
+import com.example.data.preferences.UserPreferencesManager
+import com.example.auth.GoogleAuthHelper
+import com.example.auth.GoogleAuthUser
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -62,6 +65,8 @@ data class FocusUiState(
     val isSmartAlarmActive: Boolean = false,
     val userName: String = "محمد",
     val userEmail: String? = null,
+    val userPhotoUrl: String? = null,
+    val userUid: String? = null,
     val isLoggedIn: Boolean = true, // Defaults to authenticated/guest session for instant fluidity
     val isGuestMode: Boolean = true,
     val activeTaskFilter: TaskFilterTab = TaskFilterTab.TODAY,
@@ -75,6 +80,10 @@ data class FocusUiState(
     val isDayUnavailable: Boolean = false,
     val isSyncingCloud: Boolean = false,
     val syncSuccessMessage: String? = null,
+    val sleepBedtime: String = "23:00",
+    val sleepWakeTime: String = "07:00",
+    val workStartTime: String = "09:00",
+    val workEndTime: String = "17:00",
     val currentFocusTask: TaskItem = TaskItem(
         id = "focus-placeholder",
         title = "جلسة تركيز جديدة",
@@ -119,6 +128,7 @@ class FocusViewModel(
 ) : AndroidViewModel(application) {
 
     private val alarmManager = FocusAlarmManager(application)
+    private val prefsManager = UserPreferencesManager(application)
     private val auth: FirebaseAuth?
         get() = try {
             FirebaseAuth.getInstance()
@@ -153,7 +163,117 @@ class FocusViewModel(
 
     private var timerJob: Job? = null
 
+    private val _uiPreferences = MutableStateFlow(
+        FocusUiState(
+            userName = prefsManager.userName,
+            userEmail = prefsManager.userEmail,
+            userPhotoUrl = prefsManager.userPhotoUrl,
+            userUid = prefsManager.userUid,
+            isGuestMode = prefsManager.isGuestMode,
+            isLoggedIn = prefsManager.isLoggedIn,
+            sleepBedtime = prefsManager.sleepBedtime,
+            sleepWakeTime = prefsManager.sleepWakeTime,
+            workStartTime = prefsManager.workStartTime,
+            workEndTime = prefsManager.workEndTime
+        )
+    )
+
     init {
+        val initialName = prefsManager.userName
+        val initialEmail = prefsManager.userEmail
+        val initialPhoto = prefsManager.userPhotoUrl
+        val initialUid = prefsManager.userUid
+        val initialGuest = prefsManager.isGuestMode
+        val initialLoggedIn = prefsManager.isLoggedIn
+        val initialSleepBedtime = prefsManager.sleepBedtime
+        val initialSleepWakeTime = prefsManager.sleepWakeTime
+        val initialWorkStart = prefsManager.workStartTime
+        val initialWorkEnd = prefsManager.workEndTime
+
+        _uiPreferences.update {
+            it.copy(
+                userName = initialName,
+                userEmail = initialEmail,
+                userPhotoUrl = initialPhoto,
+                userUid = initialUid,
+                isGuestMode = initialGuest,
+                isLoggedIn = initialLoggedIn,
+                sleepBedtime = initialSleepBedtime,
+                sleepWakeTime = initialSleepWakeTime,
+                workStartTime = initialWorkStart,
+                workEndTime = initialWorkEnd
+            )
+        }
+
+        // Restore or complete saved active focus timer
+        val savedTimer = prefsManager.getSavedTimer()
+        if (savedTimer != null) {
+            val now = System.currentTimeMillis()
+            if (savedTimer.isRunning) {
+                if (now >= savedTimer.targetEndTimeMillis) {
+                    // Timer finished in background while app was closed or killed
+                    _focusTimerState.value = FocusTimerState(
+                        taskId = savedTimer.taskId,
+                        taskTitle = savedTimer.taskTitle,
+                        taskSubtitle = savedTimer.taskSubtitle,
+                        plannedDurationMinutes = savedTimer.plannedDurationMinutes,
+                        initialTotalSeconds = savedTimer.initialTotalSeconds,
+                        remainingSeconds = 0,
+                        elapsedSeconds = savedTimer.initialTotalSeconds,
+                        targetEndTimeMillis = savedTimer.targetEndTimeMillis,
+                        startTimeMillis = savedTimer.startTimeMillis,
+                        status = TimerStatus.COMPLETED,
+                        isFocusModeFullscreen = false
+                    )
+                    viewModelScope.launch {
+                        repository.completeFocusSession(
+                            taskId = savedTimer.taskId,
+                            minutesSpent = savedTimer.plannedDurationMinutes,
+                            markCompleted = true
+                        )
+                        alarmManager.showTimerCompletionNotification(savedTimer.taskId, savedTimer.taskTitle)
+                        prefsManager.clearActiveTimer()
+                        checkAdaptivePlan()
+                    }
+                } else {
+                    // Timer is still running!
+                    val remainingSecs = ((savedTimer.targetEndTimeMillis - now) / 1000).toInt().coerceAtLeast(1)
+                    val elapsedSecs = (savedTimer.initialTotalSeconds - remainingSecs).coerceAtLeast(0)
+                    _focusTimerState.value = FocusTimerState(
+                        taskId = savedTimer.taskId,
+                        taskTitle = savedTimer.taskTitle,
+                        taskSubtitle = savedTimer.taskSubtitle,
+                        plannedDurationMinutes = savedTimer.plannedDurationMinutes,
+                        initialTotalSeconds = savedTimer.initialTotalSeconds,
+                        remainingSeconds = remainingSecs,
+                        elapsedSeconds = elapsedSecs,
+                        targetEndTimeMillis = savedTimer.targetEndTimeMillis,
+                        startTimeMillis = savedTimer.startTimeMillis,
+                        status = TimerStatus.RUNNING,
+                        isFocusModeFullscreen = false
+                    )
+                    startTicker()
+                }
+            } else {
+                // Timer was paused
+                val remainingSecs = savedTimer.pausedRemainingSeconds
+                val elapsedSecs = (savedTimer.initialTotalSeconds - remainingSecs).coerceAtLeast(0)
+                _focusTimerState.value = FocusTimerState(
+                    taskId = savedTimer.taskId,
+                    taskTitle = savedTimer.taskTitle,
+                    taskSubtitle = savedTimer.taskSubtitle,
+                    plannedDurationMinutes = savedTimer.plannedDurationMinutes,
+                    initialTotalSeconds = savedTimer.initialTotalSeconds,
+                    remainingSeconds = remainingSecs,
+                    elapsedSeconds = elapsedSecs,
+                    targetEndTimeMillis = savedTimer.targetEndTimeMillis,
+                    startTimeMillis = savedTimer.startTimeMillis,
+                    status = TimerStatus.PAUSED,
+                    isFocusModeFullscreen = false
+                )
+            }
+        }
+
         viewModelScope.launch {
             repository.checkAndSeedInitialData()
             checkCurrentUser()
@@ -164,12 +284,19 @@ class FocusViewModel(
         val currentUser = auth?.currentUser
         if (currentUser != null) {
             val uid = currentUser.uid
+            val name = currentUser.displayName ?: currentUser.email?.substringBefore("@") ?: prefsManager.userName
+            val email = currentUser.email ?: prefsManager.userEmail
+            val photo = currentUser.photoUrl?.toString() ?: prefsManager.userPhotoUrl
+
+            prefsManager.saveUserSession(uid, name, email, photo)
             _uiPreferences.update {
                 it.copy(
                     isLoggedIn = true,
                     isGuestMode = false,
-                    userName = currentUser.displayName ?: currentUser.email?.substringBefore("@") ?: "صديقي",
-                    userEmail = currentUser.email
+                    userName = name,
+                    userEmail = email,
+                    userPhotoUrl = photo,
+                    userUid = uid
                 )
             }
             repository.startRealtimeCloudSync(uid)
@@ -251,10 +378,6 @@ class FocusViewModel(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
-    )
-
-    private val _uiPreferences = MutableStateFlow(
-        FocusUiState()
     )
 
     val uiState: StateFlow<FocusUiState> = combine(
@@ -435,14 +558,78 @@ class FocusViewModel(
     // Auth & Cloud Sync Actions
     // ==========================================
 
+    fun updateUserName(newName: String) {
+        prefsManager.userName = newName
+        _uiPreferences.update { it.copy(userName = newName) }
+
+        val currentUid = _uiPreferences.value.userUid ?: auth?.currentUser?.uid
+        if (currentUid != null && !_uiPreferences.value.isGuestMode) {
+            viewModelScope.launch {
+                repository.syncSettingsToCloud(
+                    uid = currentUid,
+                    userName = newName,
+                    email = _uiPreferences.value.userEmail,
+                    photoUrl = _uiPreferences.value.userPhotoUrl
+                )
+            }
+        }
+    }
+
+    fun updateSleepSchedule(bedtime: String, wakeTime: String) {
+        prefsManager.sleepBedtime = bedtime
+        prefsManager.sleepWakeTime = wakeTime
+        _uiPreferences.update {
+            it.copy(
+                sleepBedtime = bedtime,
+                sleepWakeTime = wakeTime
+            )
+        }
+        val currentUid = _uiPreferences.value.userUid ?: auth?.currentUser?.uid
+        if (currentUid != null && !_uiPreferences.value.isGuestMode) {
+            viewModelScope.launch {
+                repository.syncSettingsToCloud(
+                    uid = currentUid,
+                    userName = _uiPreferences.value.userName,
+                    email = _uiPreferences.value.userEmail,
+                    photoUrl = _uiPreferences.value.userPhotoUrl
+                )
+            }
+        }
+    }
+
+    fun updateWorkWindow(startTime: String, endTime: String) {
+        prefsManager.workStartTime = startTime
+        prefsManager.workEndTime = endTime
+        _uiPreferences.update {
+            it.copy(
+                workStartTime = startTime,
+                workEndTime = endTime
+            )
+        }
+        val currentUid = _uiPreferences.value.userUid ?: auth?.currentUser?.uid
+        if (currentUid != null && !_uiPreferences.value.isGuestMode) {
+            viewModelScope.launch {
+                repository.syncSettingsToCloud(
+                    uid = currentUid,
+                    userName = _uiPreferences.value.userName,
+                    email = _uiPreferences.value.userEmail,
+                    photoUrl = _uiPreferences.value.userPhotoUrl
+                )
+            }
+        }
+    }
+
     fun loginAsGuest() {
         repository.stopRealtimeCloudSync()
+        prefsManager.setGuestSession("زائر")
         _uiPreferences.update {
             it.copy(
                 isLoggedIn = true,
                 isGuestMode = true,
-                userName = "ضيف واكا",
-                userEmail = null
+                userName = "زائر",
+                userEmail = null,
+                userPhotoUrl = null,
+                userUid = null
             )
         }
     }
@@ -450,24 +637,38 @@ class FocusViewModel(
     fun signInWithGoogle(context: android.content.Context) {
         viewModelScope.launch {
             _uiPreferences.update { it.copy(isSyncingCloud = true) }
-            val result = com.example.auth.GoogleAuthHelper.signInWithGoogle(context)
-            val user = result.getOrNull()
+            val result = GoogleAuthHelper.signInWithGoogle(context)
+            val authUser = result.getOrNull()
 
-            if (user != null) {
-                val displayName = user.displayName ?: user.email?.substringBefore("@") ?: "محمد"
-                val email = user.email
+            if (authUser != null) {
+                val displayName = authUser.displayName
+                val email = authUser.email
+                val photoUrl = authUser.photoUrl
+                val uid = authUser.uid
+
+                prefsManager.saveUserSession(
+                    uid = uid,
+                    name = displayName,
+                    email = email,
+                    photoUrl = photoUrl
+                )
+
                 _uiPreferences.update {
                     it.copy(
                         isLoggedIn = true,
                         isGuestMode = false,
                         userName = displayName,
                         userEmail = email,
+                        userPhotoUrl = photoUrl,
+                        userUid = uid,
                         isSyncingCloud = false
                     )
                 }
-                repository.startRealtimeCloudSync(user.uid)
-                repository.downloadFromCloud(user.uid)
+                repository.startRealtimeCloudSync(uid)
+                repository.downloadFromCloud(uid)
                 repository.syncAllToCloud()
+                repository.syncSettingsToCloud(uid, displayName, email, photoUrl)
+
                 try {
                     com.example.sync.FocusSyncWorker.syncImmediately(context)
                     com.example.sync.FocusSyncWorker.schedulePeriodicSync(context)
@@ -475,42 +676,8 @@ class FocusViewModel(
                     android.util.Log.w("FocusViewModel", "Sync worker trigger warning: ${e.message}")
                 }
             } else {
-                // Fallback for emulator / environments without Play Services credentials
-                val fallbackUser = auth?.currentUser
-                val uid = fallbackUser?.uid ?: "user-${UUID.randomUUID()}"
-                val name = fallbackUser?.displayName ?: "مستخدم جوجل"
-                val email = fallbackUser?.email ?: "google.user@whacka.app"
-
-                _uiPreferences.update {
-                    it.copy(
-                        isLoggedIn = true,
-                        isGuestMode = false,
-                        userName = name,
-                        userEmail = email,
-                        isSyncingCloud = false
-                    )
-                }
-                repository.startRealtimeCloudSync(uid)
-                repository.downloadFromCloud(uid)
-                repository.syncAllToCloud()
+                _uiPreferences.update { it.copy(isSyncingCloud = false) }
             }
-        }
-    }
-
-    fun loginWithMockGoogle(name: String = "محمد أحمد", email: String = "mohamed@example.com") {
-        val uid = auth?.currentUser?.uid ?: "user-google-default"
-        _uiPreferences.update {
-            it.copy(
-                isLoggedIn = true,
-                isGuestMode = false,
-                userName = name,
-                userEmail = email
-            )
-        }
-        repository.startRealtimeCloudSync(uid)
-        viewModelScope.launch {
-            repository.downloadFromCloud(uid)
-            repository.syncAllToCloud()
         }
     }
 
@@ -538,12 +705,15 @@ class FocusViewModel(
         } catch (e: Exception) {
             // Safe fallback
         }
+        prefsManager.clearSession()
         _uiPreferences.update {
             it.copy(
-                isLoggedIn = false,
-                isGuestMode = false,
+                isLoggedIn = true,
+                isGuestMode = true,
                 userName = "زائر",
-                userEmail = null
+                userEmail = null,
+                userPhotoUrl = null,
+                userUid = null
             )
         }
     }
@@ -1159,6 +1329,8 @@ class FocusViewModel(
         val targetTask = task ?: uiState.value.currentFocusTask
         val durationMins = customDurationMinutes ?: targetTask.durationMinutes.coerceAtLeast(15)
         val totalSecs = durationMins * 60
+        val now = System.currentTimeMillis()
+        val targetEndMillis = now + (totalSecs * 1000L)
 
         _focusTimerState.update {
             it.copy(
@@ -1169,11 +1341,33 @@ class FocusViewModel(
                 initialTotalSeconds = totalSecs,
                 remainingSeconds = totalSecs,
                 elapsedSeconds = 0,
+                targetEndTimeMillis = targetEndMillis,
+                startTimeMillis = now,
                 status = TimerStatus.RUNNING,
                 isFocusModeFullscreen = true,
                 colorType = targetTask.colorType
             )
         }
+
+        prefsManager.saveActiveTimer(
+            taskId = targetTask.id,
+            taskTitle = targetTask.title,
+            taskSubtitle = targetTask.subtitle,
+            plannedDurationMinutes = durationMins,
+            initialTotalSeconds = totalSecs,
+            targetEndTimeMillis = targetEndMillis,
+            startTimeMillis = now,
+            isRunning = true,
+            pausedRemainingSeconds = totalSecs
+        )
+
+        alarmManager.scheduleTimerCompletion(
+            taskId = targetTask.id,
+            taskTitle = targetTask.title,
+            plannedDurationMinutes = durationMins,
+            completionMillis = targetEndMillis
+        )
+
         startTicker()
     }
 
@@ -1194,11 +1388,47 @@ class FocusViewModel(
     fun pauseFocusTimer() {
         timerJob?.cancel()
         timerJob = null
+        val current = _focusTimerState.value
+        if (!current.taskId.isNullOrBlank()) {
+            alarmManager.cancelTimerCompletion(current.taskId)
+        }
+        prefsManager.savePausedTimer(current.remainingSeconds)
         _focusTimerState.update { it.copy(status = TimerStatus.PAUSED) }
     }
 
     fun resumeFocusTimer() {
-        _focusTimerState.update { it.copy(status = TimerStatus.RUNNING) }
+        val current = _focusTimerState.value
+        val remainingSecs = current.remainingSeconds.coerceAtLeast(1)
+        val now = System.currentTimeMillis()
+        val targetEndMillis = now + (remainingSecs * 1000L)
+
+        _focusTimerState.update {
+            it.copy(
+                targetEndTimeMillis = targetEndMillis,
+                status = TimerStatus.RUNNING
+            )
+        }
+
+        val taskId = current.taskId ?: "temp_focus_task"
+        prefsManager.saveActiveTimer(
+            taskId = taskId,
+            taskTitle = current.taskTitle,
+            taskSubtitle = current.taskSubtitle,
+            plannedDurationMinutes = current.plannedDurationMinutes,
+            initialTotalSeconds = current.initialTotalSeconds,
+            targetEndTimeMillis = targetEndMillis,
+            startTimeMillis = current.startTimeMillis,
+            isRunning = true,
+            pausedRemainingSeconds = remainingSecs
+        )
+
+        alarmManager.scheduleTimerCompletion(
+            taskId = taskId,
+            taskTitle = current.taskTitle,
+            plannedDurationMinutes = current.plannedDurationMinutes,
+            completionMillis = targetEndMillis
+        )
+
         startTicker()
     }
 
@@ -1209,12 +1439,19 @@ class FocusViewModel(
     fun resetFocusTimer() {
         timerJob?.cancel()
         timerJob = null
-        _focusTimerState.update { current ->
-            val totalSecs = current.plannedDurationMinutes * 60
-            current.copy(
+        val current = _focusTimerState.value
+        if (!current.taskId.isNullOrBlank()) {
+            alarmManager.cancelTimerCompletion(current.taskId)
+        }
+        prefsManager.clearActiveTimer()
+        _focusTimerState.update { cur ->
+            val totalSecs = cur.plannedDurationMinutes * 60
+            cur.copy(
                 remainingSeconds = totalSecs,
                 initialTotalSeconds = totalSecs,
                 elapsedSeconds = 0,
+                targetEndTimeMillis = 0L,
+                startTimeMillis = 0L,
                 status = TimerStatus.IDLE
             )
         }
@@ -1228,15 +1465,19 @@ class FocusViewModel(
         val minutesSpent = current.actualMinutesSpent
         val taskId = current.taskId
 
-        if (!taskId.isNullOrBlank() && minutesSpent > 0) {
-            viewModelScope.launch {
-                repository.addActualTime(taskId, minutesSpent)
-                if (minutesSpent < current.plannedDurationMinutes) {
-                    repository.updateNeedsRescheduling(taskId, true)
+        if (!taskId.isNullOrBlank()) {
+            alarmManager.cancelTimerCompletion(taskId)
+            if (minutesSpent > 0) {
+                viewModelScope.launch {
+                    repository.addActualTime(taskId, minutesSpent)
+                    if (minutesSpent < current.plannedDurationMinutes) {
+                        repository.updateNeedsRescheduling(taskId, true)
+                    }
+                    checkAdaptivePlan()
                 }
-                checkAdaptivePlan()
             }
         }
+        prefsManager.clearActiveTimer()
 
         _focusTimerState.update {
             it.copy(
@@ -1255,22 +1496,30 @@ class FocusViewModel(
         val taskId = current.taskId
 
         if (!taskId.isNullOrBlank()) {
+            alarmManager.cancelTimerCompletion(taskId)
             alarmManager.cancelTaskAlarm(taskId)
             FocusAlarmForegroundService.stop(getApplication())
             FocusAlarmSoundManager.stopAlarm()
+            alarmManager.showTimerCompletionNotification(taskId, current.taskTitle)
+            prefsManager.clearActiveTimer()
+
             viewModelScope.launch {
                 repository.completeFocusSession(
                     taskId = taskId,
                     minutesSpent = minutesSpent,
                     markCompleted = true
                 )
+                checkAdaptivePlan()
             }
+        } else {
+            prefsManager.clearActiveTimer()
         }
 
         _focusTimerState.update {
             it.copy(
                 status = TimerStatus.COMPLETED,
                 remainingSeconds = 0,
+                elapsedSeconds = it.initialTotalSeconds,
                 isFocusModeFullscreen = false
             )
         }
@@ -1284,24 +1533,33 @@ class FocusViewModel(
                 val current = _focusTimerState.value
                 if (current.status != TimerStatus.RUNNING) break
 
-                val newRemaining = current.remainingSeconds - 1
-                val newElapsed = current.elapsedSeconds + 1
+                val now = System.currentTimeMillis()
+                val remainingMillis = current.targetEndTimeMillis - now
+                val newRemaining = (remainingMillis / 1000).toInt().coerceAtLeast(0)
+                val newElapsed = (current.initialTotalSeconds - newRemaining).coerceAtLeast(0)
 
-                if (newRemaining <= 0) {
+                if (newRemaining <= 0 || remainingMillis <= 0) {
                     _focusTimerState.update {
                         it.copy(
                             remainingSeconds = 0,
-                            elapsedSeconds = newElapsed,
-                            status = TimerStatus.COMPLETED
+                            elapsedSeconds = current.initialTotalSeconds,
+                            status = TimerStatus.COMPLETED,
+                            isFocusModeFullscreen = false
                         )
                     }
                     val taskId = current.taskId
                     if (!taskId.isNullOrBlank()) {
+                        alarmManager.cancelTimerCompletion(taskId)
+                        alarmManager.showTimerCompletionNotification(taskId, current.taskTitle)
+                        prefsManager.clearActiveTimer()
                         repository.completeFocusSession(
                             taskId = taskId,
-                            minutesSpent = (newElapsed + 30) / 60,
+                            minutesSpent = current.plannedDurationMinutes,
                             markCompleted = true
                         )
+                        checkAdaptivePlan()
+                    } else {
+                        prefsManager.clearActiveTimer()
                     }
                     break
                 } else {

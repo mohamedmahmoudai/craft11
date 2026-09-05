@@ -75,6 +75,8 @@ data class FocusTimerState(
     val initialTotalSeconds: Int = 25 * 60,
     val remainingSeconds: Int = 25 * 60,
     val elapsedSeconds: Int = 0,
+    val targetEndTimeMillis: Long = 0L,
+    val startTimeMillis: Long = 0L,
     val status: TimerStatus = TimerStatus.IDLE,
     val isFocusModeFullscreen: Boolean = false,
     val colorType: BlockColor = BlockColor.TEAL

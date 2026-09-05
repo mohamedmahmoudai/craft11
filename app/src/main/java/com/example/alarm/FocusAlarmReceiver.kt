@@ -75,6 +75,10 @@ class FocusAlarmReceiver : BroadcastReceiver() {
                 FocusAlarmSoundManager.stopAlarm()
             }
 
+            FocusAlarmManager.ACTION_TIMER_COMPLETED -> {
+                handleTimerCompleted(context, notificationManager, taskId, taskTitle)
+            }
+
             Intent.ACTION_BOOT_COMPLETED -> {
                 // Device rebooted -> Reschedule all active uncompleted tasks
                 rescheduleAllAlarms(context)
@@ -210,6 +214,38 @@ class FocusAlarmReceiver : BroadcastReceiver() {
             .setContentIntent(openPendingIntent)
 
         notificationManager?.notify(notificationId + 100, builder.build())
+    }
+
+    private fun handleTimerCompleted(
+        context: Context,
+        notificationManager: NotificationManager?,
+        taskId: String,
+        taskTitle: String
+    ) {
+        val alarmManager = FocusAlarmManager(context)
+        alarmManager.showTimerCompletionNotification(taskId, taskTitle)
+
+        // Clear active timer in UserPreferencesManager
+        val prefs = com.example.data.preferences.UserPreferencesManager(context)
+        prefs.clearActiveTimer()
+
+        // Automatically mark the task status as COMPLETED, log actual spent time, and update project/goal
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val db = FocusCraftDatabase.getDatabase(context)
+                val repository = FocusRepository(db.taskDao(), db.projectDao(), db.goalDao())
+                val task = db.taskDao().findTaskById(taskId)
+                val minutesSpent = task?.durationMinutes?.coerceAtLeast(1) ?: 25
+                repository.completeFocusSession(
+                    taskId = taskId,
+                    minutesSpent = minutesSpent,
+                    markCompleted = true
+                )
+                Log.d(TAG, "Successfully completed task '$taskTitle' upon timer finish")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error completing task on timer finish: ${e.message}")
+            }
+        }
     }
 
     private fun rescheduleAllAlarms(context: Context) {

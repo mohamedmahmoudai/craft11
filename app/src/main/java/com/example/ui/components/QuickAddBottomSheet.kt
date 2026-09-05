@@ -421,6 +421,118 @@ fun WhackaTextField(
 }
 
 // =========================================================================
+// 2b. Native Material 3 Date Picker Field
+// =========================================================================
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun WhackaDatePickerField(
+    value: String,
+    onDateSelected: (String) -> Unit,
+    label: String,
+    placeholder: String = "اختر التاريخ",
+    modifier: Modifier = Modifier
+) {
+    var showDialog by remember { mutableStateOf(false) }
+    val datePickerState = rememberDatePickerState()
+
+    if (showDialog) {
+        DatePickerDialog(
+            onDismissRequest = { showDialog = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let { millis ->
+                            val calendar = java.util.Calendar.getInstance()
+                            calendar.timeInMillis = millis
+                            val formatted = String.format(
+                                java.util.Locale.US,
+                                "%02d/%02d/%04d",
+                                calendar.get(java.util.Calendar.MONTH) + 1,
+                                calendar.get(java.util.Calendar.DAY_OF_MONTH),
+                                calendar.get(java.util.Calendar.YEAR)
+                            )
+                            onDateSelected(formatted)
+                        }
+                        showDialog = false
+                    }
+                ) {
+                    Text("اختيار", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDialog = false }) {
+                    Text("إلغاء")
+                }
+            },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+            modifier = Modifier
+                .fillMaxWidth(0.95f)
+                .padding(vertical = 16.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                DatePicker(
+                    state = datePickerState,
+                    modifier = Modifier.padding(horizontal = 4.dp)
+                )
+            }
+        }
+    }
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        if (label.isNotBlank()) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            )
+        }
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .clickable { showDialog = true },
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = value.ifBlank { placeholder },
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = 13.sp,
+                        color = if (value.isNotBlank()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    )
+                )
+                Icon(
+                    imageVector = Icons.Outlined.CalendarToday,
+                    contentDescription = "اختيار التاريخ",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+    }
+}
+
+// =========================================================================
 // 3. Priority Pill Selector (منخفضة, متوسطة, عالية)
 // =========================================================================
 
@@ -719,9 +831,9 @@ fun CreateTaskDialog(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        WhackaTextField(
+                        WhackaDatePickerField(
                             value = scheduledDate,
-                            onValueChange = { scheduledDate = it },
+                            onDateSelected = { scheduledDate = it },
                             label = "التاريخ المجدول",
                             placeholder = "اليوم",
                             modifier = Modifier.weight(1f)
@@ -747,11 +859,11 @@ fun CreateTaskDialog(
                             placeholder = "45",
                             modifier = Modifier.weight(1f)
                         )
-                        WhackaTextField(
+                        WhackaDatePickerField(
                             value = deadlineText,
-                            onValueChange = { deadlineText = it },
+                            onDateSelected = { deadlineText = it },
                             label = "الموعد النهائي (اختياري)",
-                            placeholder = "نهاية الأسبوع",
+                            placeholder = "اختر تاريخ",
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -809,11 +921,17 @@ fun CreateTaskDialog(
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.clickable { isFixed = !isFixed }
+                            modifier = Modifier.clickable {
+                                isFixed = !isFixed
+                                if (isFixed) isLater = false
+                            }
                         ) {
                             Checkbox(
                                 checked = isFixed,
-                                onCheckedChange = { isFixed = it },
+                                onCheckedChange = { checked ->
+                                    isFixed = checked
+                                    if (checked) isLater = false
+                                },
                                 colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
                             )
                             Text(
@@ -827,11 +945,17 @@ fun CreateTaskDialog(
 
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.clickable { isLater = !isLater }
+                            modifier = Modifier.clickable {
+                                isLater = !isLater
+                                if (isLater) isFixed = false
+                            }
                         ) {
                             Checkbox(
                                 checked = isLater,
-                                onCheckedChange = { isLater = it },
+                                onCheckedChange = { checked ->
+                                    isLater = checked
+                                    if (checked) isFixed = false
+                                },
                                 colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
                             )
                             Text(
@@ -1116,11 +1240,11 @@ fun CreateProjectDialog(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        WhackaTextField(
+                        WhackaDatePickerField(
                             value = deadline,
-                            onValueChange = { deadline = it },
+                            onDateSelected = { deadline = it },
                             label = "الموعد النهائي",
-                            placeholder = "نهاية الشهر",
+                            placeholder = "اختر تاريخ",
                             modifier = Modifier.weight(1f)
                         )
                         WhackaTextField(
@@ -1487,9 +1611,9 @@ fun CreateEventDialog(
                         minLines = 2
                     )
 
-                    WhackaTextField(
+                    WhackaDatePickerField(
                         value = eventDate,
-                        onValueChange = { eventDate = it },
+                        onDateSelected = { eventDate = it },
                         label = "التاريخ",
                         placeholder = "اليوم"
                     )
@@ -1691,9 +1815,22 @@ fun CreateGoalDialog(
                 TextButton(onClick = { showDatePicker = false }) {
                     Text("إلغاء")
                 }
-            }
+            },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+            modifier = Modifier
+                .fillMaxWidth(0.95f)
+                .padding(vertical = 16.dp)
         ) {
-            DatePicker(state = datePickerState)
+            Box(
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                DatePicker(
+                    state = datePickerState,
+                    modifier = Modifier.padding(horizontal = 4.dp)
+                )
+            }
         }
     }
 

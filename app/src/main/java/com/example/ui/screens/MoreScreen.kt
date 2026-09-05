@@ -29,21 +29,28 @@ import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Login
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Logout
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -57,13 +64,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.example.model.ReviewStats
 import com.example.model.TaskItem
+import com.example.ui.components.AuthModal
 import com.example.ui.theme.WhackaAmber
 import com.example.ui.theme.WhackaBackground
 import com.example.ui.theme.WhackaBorder
@@ -75,12 +85,20 @@ import com.example.ui.theme.WhackaTeal
 fun MoreScreen(
     userName: String,
     userEmail: String?,
+    userPhotoUrl: String? = null,
     isGuestMode: Boolean,
     isDarkMode: Boolean,
     isSyncingCloud: Boolean = false,
     syncSuccessMessage: String? = null,
     reviewStats: ReviewStats,
     tasks: List<TaskItem> = emptyList(),
+    sleepBedtime: String = "23:00",
+    sleepWakeTime: String = "07:00",
+    workStartTime: String = "09:00",
+    workEndTime: String = "17:00",
+    onUpdateSleepSchedule: (bedtime: String, wakeTime: String) -> Unit = { _, _ -> },
+    onUpdateWorkWindow: (startTime: String, endTime: String) -> Unit = { _, _ -> },
+    onUpdateUserName: (String) -> Unit = {},
     onToggleTheme: () -> Unit,
     onGoogleSignIn: () -> Unit = {},
     onSyncToCloud: () -> Unit = {},
@@ -93,13 +111,27 @@ fun MoreScreen(
     onTestAlarm: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    var showAuthModal by remember { mutableStateOf(false) }
+
+    if (showAuthModal) {
+        AuthModal(
+            onDismiss = { showAuthModal = false },
+            onGoogleSignIn = {
+                showAuthModal = false
+                onGoogleSignIn()
+            },
+            onContinueAsGuest = {
+                showAuthModal = false
+            }
+        )
+    }
     // Parking lot tasks: tasks marked later, or with "لاحقاً" or needs rescheduling
     val parkingLotTasks = tasks.filter { it.isLater || it.timeText == "لاحقاً" || it.needsRescheduling }
 
-    var sleepStart by remember { mutableStateOf("11:00 م") }
-    var sleepEnd by remember { mutableStateOf("07:00 ص") }
-    var workStart by remember { mutableStateOf("09:00 ص") }
-    var workEnd by remember { mutableStateOf("05:00 م") }
+    var sleepStart by remember(sleepBedtime) { mutableStateOf(sleepBedtime) }
+    var sleepEnd by remember(sleepWakeTime) { mutableStateOf(sleepWakeTime) }
+    var workStart by remember(workStartTime) { mutableStateOf(workStartTime) }
+    var workEnd by remember(workEndTime) { mutableStateOf(workEndTime) }
 
     LazyColumn(
         modifier = modifier
@@ -147,7 +179,7 @@ fun MoreScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -155,39 +187,65 @@ fun MoreScreen(
                         horizontalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         // User Avatar
-                        Box(
-                            modifier = Modifier
-                                .size(52.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    if (isGuestMode) WhackaAmber.copy(alpha = 0.15f)
-                                    else WhackaTeal.copy(alpha = 0.15f)
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = userName.take(1).uppercase().ifBlank { "ف" },
-                                style = MaterialTheme.typography.titleLarge.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isGuestMode) WhackaAmber else WhackaTeal
-                                )
+                        if (!isGuestMode && !userPhotoUrl.isNullOrBlank()) {
+                            AsyncImage(
+                                model = userPhotoUrl,
+                                contentDescription = "صورة الحساب",
+                                modifier = Modifier
+                                    .size(54.dp)
+                                    .clip(CircleShape)
+                                    .border(2.dp, WhackaTeal.copy(alpha = 0.5f), CircleShape),
+                                contentScale = ContentScale.Crop
                             )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .size(54.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (isGuestMode) WhackaAmber.copy(alpha = 0.15f)
+                                        else WhackaTeal.copy(alpha = 0.15f)
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (isGuestMode) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Person,
+                                        contentDescription = "زائر",
+                                        tint = WhackaAmber,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                } else {
+                                    Text(
+                                        text = userName.take(1).uppercase().ifBlank { "G" },
+                                        style = MaterialTheme.typography.titleLarge.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            color = WhackaTeal
+                                        )
+                                    )
+                                }
+                            }
                         }
 
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = userName.ifBlank { "مستخدم FocusCraft" },
+                                text = if (isGuestMode) "زائر" else userName.ifBlank { "mohamed mahmoud" },
                                 style = MaterialTheme.typography.titleMedium.copy(
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 16.sp,
+                                    fontSize = 17.sp,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                             )
                             Text(
-                                text = userEmail ?: "الوضع المحلي (Offline First)",
+                                text = if (isGuestMode) {
+                                    "سجّل الدخول لحفظ بياناتك عبر كل أجهزتك"
+                                } else {
+                                    "مسجل الدخول - بياناتك محفوظة عبر أجهزتك"
+                                },
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    lineHeight = 17.sp
                                 )
                             )
                         }
@@ -209,7 +267,7 @@ fun MoreScreen(
                                 .padding(horizontal = 10.dp, vertical = 5.dp)
                         ) {
                             Text(
-                                text = if (isGuestMode) "ضيف محلي" else "موثق سحابياً ✓",
+                                text = if (isGuestMode) "زائر" else "Google ✓",
                                 style = MaterialTheme.typography.labelSmall.copy(
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 11.sp,
@@ -221,88 +279,93 @@ fun MoreScreen(
 
                     // Account Actions
                     if (isGuestMode) {
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            // Primary Google Sign In Button
-                            Button(
-                                onClick = onGoogleSignIn,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(48.dp)
-                                    .testTag("more_google_sign_in_btn"),
-                                shape = RoundedCornerShape(16.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.primary,
-                                    contentColor = Color.White
-                                )
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center
-                                ) {
-                                    Text(
-                                        text = "G",
-                                        style = MaterialTheme.typography.titleMedium.copy(
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.White
-                                        )
-                                    )
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Text(
-                                        text = "المتابعة عبر Google",
-                                        style = MaterialTheme.typography.labelLarge.copy(
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 14.sp
-                                        )
-                                    )
-                                }
-                            }
-
-                            // Secondary email / full login screen
-                            OutlinedButton(
-                                onClick = onOpenLoginScreen,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(44.dp)
-                                    .testTag("login_button"),
-                                shape = RoundedCornerShape(16.dp),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+                        // When logged in as Guest ("زائر"):
+                        // Show primary button "تسجيل الدخول" (Log In) that launches the Auth Modal.
+                        Button(
+                            onClick = { showAuthModal = true },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("login_button"),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = Color.White
+                            )
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.AccountCircle,
+                                    imageVector = Icons.Default.Login,
                                     contentDescription = null,
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "تسجيل الدخول / خيارات أخرى",
-                                    style = MaterialTheme.typography.labelMedium.copy(
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 13.sp
+                                    text = "تسجيل الدخول",
+                                    style = MaterialTheme.typography.labelLarge.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp
                                     )
                                 )
                             }
                         }
                     } else {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        // When logged in via Google:
+                        // Replace the "تسجيل الدخول" button with a light gray "تسجيل الخروج" (Log Out) button that resets session state safely.
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            OutlinedButton(
+                                onClick = onLogout,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(44.dp)
+                                    .testTag("logout_button"),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                ),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Logout,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "تسجيل الخروج",
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                )
+                            }
+
+                            // Cloud Sync status & button
                             OutlinedButton(
                                 onClick = onSyncToCloud,
                                 enabled = !isSyncingCloud,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(46.dp)
+                                    .height(42.dp)
                                     .testTag("sync_cloud_button"),
-                                shape = RoundedCornerShape(16.dp),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
                             ) {
                                 if (isSyncingCloud) {
                                     CircularProgressIndicator(
-                                        modifier = Modifier.size(16.dp),
+                                        modifier = Modifier.size(14.dp),
                                         strokeWidth = 2.dp,
                                         color = MaterialTheme.colorScheme.primary
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "جارٍ مزامنة البيانات...",
+                                        text = "جارٍ مزامنة البيانات سحابياً...",
                                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
                                     )
                                 } else {
@@ -310,11 +373,11 @@ fun MoreScreen(
                                         imageVector = Icons.Default.CloudSync,
                                         contentDescription = null,
                                         tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(18.dp)
+                                        modifier = Modifier.size(16.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "مزامنة سحابية فورية (Cloud Sync)",
+                                        text = "مزامنة سحابية الآن",
                                         style = MaterialTheme.typography.labelMedium.copy(
                                             fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.primary
@@ -622,6 +685,10 @@ fun MoreScreen(
                         }
                     }
 
+                    val sleepHours = calculateDurationHours(sleepStart, sleepEnd)
+                    val awakeHours = 24 - sleepHours
+                    val awakeMinutes = awakeHours * 60
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -629,13 +696,19 @@ fun MoreScreen(
                         TimeConfigField(
                             label = "وقت النوم",
                             value = sleepStart,
-                            onValueChange = { sleepStart = it },
+                            onValueChange = {
+                                sleepStart = it
+                                onUpdateSleepSchedule(it, sleepEnd)
+                            },
                             modifier = Modifier.weight(1f)
                         )
                         TimeConfigField(
                             label = "وقت الاستيقاظ",
                             value = sleepEnd,
-                            onValueChange = { sleepEnd = it },
+                            onValueChange = {
+                                sleepEnd = it
+                                onUpdateSleepSchedule(sleepStart, it)
+                            },
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -647,7 +720,7 @@ fun MoreScreen(
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f)
                     ) {
                         Text(
-                            text = "ساعات النوم: 8 ساعات • نافذة اليقظة والنشاط: 16 ساعة (960 دقيقة سعة كاملة)",
+                            text = "ساعات النوم: $sleepHours ساعات • نافذة اليقظة والنشاط: $awakeHours ساعة ($awakeMinutes دقيقة سعة كاملة)",
                             style = MaterialTheme.typography.bodySmall.copy(
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Medium,
@@ -715,6 +788,8 @@ fun MoreScreen(
                         }
                     }
 
+                    val workHours = calculateDurationHours(workStart, workEnd)
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -722,13 +797,19 @@ fun MoreScreen(
                         TimeConfigField(
                             label = "بداية العمل",
                             value = workStart,
-                            onValueChange = { workStart = it },
+                            onValueChange = {
+                                workStart = it
+                                onUpdateWorkWindow(it, workEnd)
+                            },
                             modifier = Modifier.weight(1f)
                         )
                         TimeConfigField(
                             label = "نهاية العمل",
                             value = workEnd,
-                            onValueChange = { workEnd = it },
+                            onValueChange = {
+                                workEnd = it
+                                onUpdateWorkWindow(workStart, it)
+                            },
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -739,7 +820,7 @@ fun MoreScreen(
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f)
                     ) {
                         Text(
-                            text = "ساعات العمل المتاحة: 8 ساعات عمل يومياً يتم فيها إدراج المواعيد والمهام الأساسية",
+                            text = "ساعات العمل المتاحة: $workHours ساعات عمل يومياً يتم فيها إدراج المواعيد والمهام الأساسية",
                             style = MaterialTheme.typography.bodySmall.copy(
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Medium,
@@ -868,10 +949,12 @@ fun MoreScreen(
             }
         }
 
-        // 8. General Preferences & Logout
+        // 8. Settings Card (الإعدادات) & User Name Field
         item {
             Surface(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("settings_card"),
                 shape = RoundedCornerShape(24.dp),
                 color = MaterialTheme.colorScheme.surface,
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)),
@@ -881,16 +964,68 @@ fun MoreScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Text(
-                        text = "التفضيلات والمظهر",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = MaterialTheme.colorScheme.onSurface
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
                         )
-                    )
+                        Text(
+                            text = "الإعدادات",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        )
+                    }
+
+                    // Editable User Name Setting Field ("اسمك")
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = "اسمك",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        )
+                        OutlinedTextField(
+                            value = userName,
+                            onValueChange = onUpdateUserName,
+                            placeholder = { Text("أدخل اسمك الشخصي") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("user_name_input_field"),
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Person,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                            )
+                        )
+                        Text(
+                            text = "سيظهر هذا الاسم في ترحيب الشاشة الرئيسية (أهلاً بك، $userName)",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        )
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
 
                     // Dark Mode Toggle
                     Row(
@@ -961,35 +1096,6 @@ fun MoreScreen(
                             )
                         )
                     }
-
-                    // Logout / Switch Account Button
-                    OutlinedButton(
-                        onClick = onLogout,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(44.dp)
-                            .testTag("logout_button"),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = WhackaRed
-                        ),
-                        border = BorderStroke(1.dp, WhackaRed.copy(alpha = 0.3f))
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Logout,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = WhackaRed
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = if (isGuestMode) "تبديل أو تسجيل الدخول" else "تسجيل الخروج من الحساب",
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = WhackaRed
-                            )
-                        )
-                    }
                 }
             }
         }
@@ -1033,6 +1139,20 @@ private fun StatPillBox(
     }
 }
 
+private fun calculateDurationHours(start: String, end: String): Int {
+    return try {
+        val sH = start.substringBefore(":").trim().toInt()
+        val sM = start.substringAfter(":").take(2).trim().toInt()
+        val eH = end.substringBefore(":").trim().toInt()
+        val eM = end.substringAfter(":").take(2).trim().toInt()
+        var diff = (eH * 60 + eM) - (sH * 60 + sM)
+        if (diff <= 0) diff += 24 * 60
+        (diff / 60).coerceAtLeast(1)
+    } catch (e: Exception) {
+        8
+    }
+}
+
 @Composable
 private fun TimeConfigField(
     label: String,
@@ -1040,31 +1160,71 @@ private fun TimeConfigField(
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    val initialHour = try {
+        value.substringBefore(":").trim().toInt()
+    } catch (e: Exception) {
+        12
+    }
+    val initialMinute = try {
+        value.substringAfter(":").take(2).trim().toInt()
+    } catch (e: Exception) {
+        0
+    }
+
+    val timePickerDialog = remember(context, value) {
+        android.app.TimePickerDialog(
+            context,
+            { _, hourOfDay, minute ->
+                val formatted = String.format(java.util.Locale.US, "%02d:%02d", hourOfDay, minute)
+                onValueChange(formatted)
+            },
+            initialHour,
+            initialMinute,
+            false
+        )
+    }
+
     Surface(
-        modifier = modifier,
+        onClick = { timePickerDialog.show() },
+        modifier = modifier.testTag("time_config_${label.replace(" ", "_")}"),
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.background,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+            Column(
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 )
-            )
-            Text(
-                text = value,
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
                 )
+            }
+            Icon(
+                imageVector = Icons.Default.Edit,
+                contentDescription = "تعديل $label",
+                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                modifier = Modifier.size(16.dp)
             )
         }
     }

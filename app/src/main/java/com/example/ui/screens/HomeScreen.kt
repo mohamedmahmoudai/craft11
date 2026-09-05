@@ -129,6 +129,10 @@ fun HomeScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
+                        val cleanName = userName.trim()
+                        val greetingText = if (cleanName.isNotBlank()) "أهلاً بك، $cleanName 👋" else "أهلاً بك، صديقي 👋"
+                        val avatarInitial = if (cleanName.isNotBlank()) cleanName.take(1) else "ص"
+
                         // User Avatar (Whacka 16dp rounded box)
                         Box(
                             modifier = Modifier
@@ -138,7 +142,7 @@ fun HomeScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = userName.take(1).ifBlank { "م" },
+                                text = avatarInitial,
                                 style = MaterialTheme.typography.titleMedium.copy(
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 18.sp,
@@ -149,7 +153,7 @@ fun HomeScreen(
 
                         Column {
                             Text(
-                                text = "أهلاً بك، $userName 👋",
+                                text = greetingText,
                                 style = MaterialTheme.typography.titleLarge.copy(
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 19.sp,
