@@ -267,8 +267,8 @@ object SchedulingEngine {
             set(Calendar.MILLISECOND, 0)
         }
 
-        // Move to Sunday of current week
-        while (calendar.get(Calendar.DAY_OF_WEEK) != Calendar.SUNDAY) {
+        // Move to Saturday of current week
+        while (calendar.get(Calendar.DAY_OF_WEEK) != Calendar.SATURDAY) {
             calendar.add(Calendar.DAY_OF_MONTH, -1)
         }
 
@@ -276,7 +276,7 @@ object SchedulingEngine {
         val selCal = Calendar.getInstance().apply { timeInMillis = selectedDateMillis }
 
         val arabicDayNames = listOf(
-            "الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"
+            "السبت", "الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة"
         )
 
         val days = mutableListOf<DayItem>()
@@ -357,5 +357,33 @@ object SchedulingEngine {
                 )
             }
         }
+    }
+
+    /**
+     * Computes the exact timestamp for a given Day of Week (e.g. Calendar.SATURDAY) in the target week.
+     */
+    fun computeDateForDayOfWeek(baseDateMillis: Long, targetCalendarDay: Int, weekOffset: Int = 0): Long {
+        val calendar = Calendar.getInstance().apply {
+            timeInMillis = baseDateMillis
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        while (calendar.get(Calendar.DAY_OF_WEEK) != Calendar.SATURDAY) {
+            calendar.add(Calendar.DAY_OF_MONTH, -1)
+        }
+        val daysFromSaturday = when (targetCalendarDay) {
+            Calendar.SATURDAY -> 0
+            Calendar.SUNDAY -> 1
+            Calendar.MONDAY -> 2
+            Calendar.TUESDAY -> 3
+            Calendar.WEDNESDAY -> 4
+            Calendar.THURSDAY -> 5
+            Calendar.FRIDAY -> 6
+            else -> 0
+        }
+        calendar.add(Calendar.DAY_OF_MONTH, daysFromSaturday + (weekOffset * 7))
+        return calendar.timeInMillis
     }
 }

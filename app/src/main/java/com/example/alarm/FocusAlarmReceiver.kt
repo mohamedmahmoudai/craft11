@@ -98,8 +98,8 @@ class FocusAlarmReceiver : BroadcastReceiver() {
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or
                 (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
 
-        // 1. Full-screen / content Intent opening MainActivity in Smart Alarm mode
-        val fullScreenIntent = Intent(context, MainActivity::class.java).apply {
+        // 1. Full-screen / content Intent opening SmartAlarmActivity in isolated mode
+        val fullScreenIntent = Intent(context, com.example.ui.screens.SmartAlarmActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             putExtra(FocusAlarmManager.EXTRA_TRIGGER_SMART_ALARM, true)
             putExtra(FocusAlarmManager.EXTRA_TASK_ID, taskId)

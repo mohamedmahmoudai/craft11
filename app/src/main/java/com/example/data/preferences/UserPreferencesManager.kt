@@ -59,6 +59,41 @@ class UserPreferencesManager(context: Context) {
         get() = prefs.getString(KEY_WORK_END_TIME, "17:00") ?: "17:00"
         set(value) = prefs.edit().putString(KEY_WORK_END_TIME, value).apply()
 
+    // Sound and Notification preferences
+    var alarmSoundUri: String?
+        get() = prefs.getString(KEY_ALARM_SOUND_URI, null)
+        set(value) = prefs.edit().putString(KEY_ALARM_SOUND_URI, value).apply()
+
+    var alarmSoundTitle: String
+        get() = prefs.getString(KEY_ALARM_SOUND_TITLE, "نغمة التطبيق الافتراضية (Default)") ?: "نغمة التطبيق الافتراضية (Default)"
+        set(value) = prefs.edit().putString(KEY_ALARM_SOUND_TITLE, value).apply()
+
+    var notificationSoundUri: String?
+        get() = prefs.getString(KEY_NOTIF_SOUND_URI, null)
+        set(value) = prefs.edit().putString(KEY_NOTIF_SOUND_URI, value).apply()
+
+    var notificationSoundTitle: String
+        get() = prefs.getString(KEY_NOTIF_SOUND_TITLE, "نغمة الإشعار الافتراضية (Default)") ?: "نغمة الإشعار الافتراضية (Default)"
+        set(value) = prefs.edit().putString(KEY_NOTIF_SOUND_TITLE, value).apply()
+
+    fun getEffectiveAlarmUri(context: android.content.Context): android.net.Uri {
+        val saved = alarmSoundUri
+        return if (!saved.isNullOrBlank()) {
+            android.net.Uri.parse(saved)
+        } else {
+            android.net.Uri.parse("android.resource://${context.packageName}/${com.example.R.raw.default_alarm}")
+        }
+    }
+
+    fun getEffectiveNotificationUri(context: android.content.Context): android.net.Uri {
+        val saved = notificationSoundUri
+        return if (!saved.isNullOrBlank()) {
+            android.net.Uri.parse(saved)
+        } else {
+            android.net.Uri.parse("android.resource://${context.packageName}/${com.example.R.raw.default_notification}")
+        }
+    }
+
     fun saveUserSession(uid: String, name: String, email: String?, photoUrl: String?) {
         prefs.edit()
             .putBoolean(KEY_IS_LOGGED_IN, true)
@@ -166,6 +201,11 @@ class UserPreferencesManager(context: Context) {
         private const val KEY_SLEEP_WAKETIME = "sleep_waketime"
         private const val KEY_WORK_START_TIME = "work_start_time"
         private const val KEY_WORK_END_TIME = "work_end_time"
+
+        private const val KEY_ALARM_SOUND_URI = "alarm_sound_uri"
+        private const val KEY_ALARM_SOUND_TITLE = "alarm_sound_title"
+        private const val KEY_NOTIF_SOUND_URI = "notif_sound_uri"
+        private const val KEY_NOTIF_SOUND_TITLE = "notif_sound_title"
 
         private const val KEY_TIMER_TASK_ID = "timer_task_id"
         private const val KEY_TIMER_TASK_TITLE = "timer_task_title"

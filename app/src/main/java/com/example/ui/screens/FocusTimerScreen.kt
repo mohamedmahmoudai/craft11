@@ -273,10 +273,10 @@ fun FocusTimerScreen(
                         text = timerState.formattedRemainingTime,
                         style = MaterialTheme.typography.displayLarge.copy(
                             fontWeight = FontWeight.Bold,
-                            fontSize = 52.sp,
-                            letterSpacing = 1.sp
+                            fontSize = 54.sp,
+                            letterSpacing = 1.5.sp
                         ),
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = Color.White,
                         modifier = Modifier.testTag("timer_display_text")
                     )
 

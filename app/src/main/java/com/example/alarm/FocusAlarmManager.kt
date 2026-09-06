@@ -33,9 +33,17 @@ class FocusAlarmManager(private val context: Context) {
      */
     fun createNotificationChannels() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val alarmSoundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+            val prefs = com.example.data.preferences.UserPreferencesManager(context)
+            val alarmSoundUri = prefs.getEffectiveAlarmUri(context)
+            val reminderSoundUri = prefs.getEffectiveNotificationUri(context)
+
             val audioAttributes = AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_ALARM)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build()
+
+            val notifAudioAttributes = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_NOTIFICATION)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                 .build()
 
@@ -61,6 +69,7 @@ class FocusAlarmManager(private val context: Context) {
             ).apply {
                 description = "إشعارات تذكيرية قبل بدء المهمة بـ 15 دقيقة"
                 enableVibration(true)
+                setSound(reminderSoundUri, notifAudioAttributes)
                 setShowBadge(true)
             }
 
@@ -245,7 +254,7 @@ class FocusAlarmManager(private val context: Context) {
 
         try {
             // Gold standard: setAlarmClock guarantees alarm firing in Doze / Silent mode
-            val showIntent = Intent(context, MainActivity::class.java).apply {
+            val showIntent = Intent(context, com.example.ui.screens.SmartAlarmActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             }
             val showPendingIntent = PendingIntent.getActivity(

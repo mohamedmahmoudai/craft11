@@ -83,13 +83,13 @@ private val WhackaDarkColorScheme = darkColorScheme(
     onErrorContainer = Color(0xFFFEE2E2)
 )
 
-// Whacka Shapes Geometry: Modals & Cards 24dp, Inputs 16dp, Pills/Chips 50%
+// Whacka Shapes Geometry: Modals & Cards 24dp, Inputs 16dp, Dialogs/Sheets 28dp
 val WhackaShapes = Shapes(
     extraSmall = RoundedCornerShape(8.dp),
     small = RoundedCornerShape(16.dp),      // Input Fields (16.dp)
     medium = RoundedCornerShape(24.dp),     // Cards (24.dp)
     large = RoundedCornerShape(24.dp),      // Modals & Dialogs (24.dp)
-    extraLarge = RoundedCornerShape(50)     // Pills / Chips (fully rounded)
+    extraLarge = RoundedCornerShape(28.dp)  // Large Dialogs & Surfaces (28.dp)
 )
 
 @Composable

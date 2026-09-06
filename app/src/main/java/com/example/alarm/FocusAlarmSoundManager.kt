@@ -23,9 +23,8 @@ object FocusAlarmSoundManager {
 
         try {
             // 1. Play Alarm Sound
-            val alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
-                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+            val alarmUri = com.example.data.preferences.UserPreferencesManager(context)
+                .getEffectiveAlarmUri(context)
 
             val ringtone = RingtoneManager.getRingtone(context.applicationContext, alarmUri)
             ringtone?.audioAttributes = AudioAttributes.Builder()

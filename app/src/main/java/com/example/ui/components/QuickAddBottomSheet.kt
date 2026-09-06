@@ -50,6 +50,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
@@ -76,10 +77,23 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.model.BlockColor
+import com.example.model.QuickAddInitialType
 import com.example.ui.theme.WhackaAmber
 import com.example.ui.theme.WhackaEmerald
 import com.example.ui.theme.WhackaRed
 import com.example.viewmodel.FocusViewModel
+import java.text.SimpleDateFormat
+import java.util.Locale
+
+fun parseDateStringToMillis(dateStr: String, fallbackMillis: Long): Long {
+    if (dateStr.isBlank() || dateStr == "اليوم") return fallbackMillis
+    return try {
+        val sdf = SimpleDateFormat("MM/dd/yyyy", Locale.US)
+        sdf.parse(dateStr)?.time ?: fallbackMillis
+    } catch (_: Exception) {
+        fallbackMillis
+    }
+}
 
 // =========================================================================
 // Category Definition for Whacka Tasks
@@ -113,21 +127,23 @@ data class MilestoneDraft(
 @Composable
 fun QuickAddBottomSheet(
     viewModel: FocusViewModel,
+    initialType: QuickAddInitialType = QuickAddInitialType.NONE,
     onDismiss: () -> Unit
 ) {
-    var showTaskDialog by remember { mutableStateOf(false) }
-    var showEventDialog by remember { mutableStateOf(false) }
-    var showProjectDialog by remember { mutableStateOf(false) }
-    var showGoalDialog by remember { mutableStateOf(false) }
+    var showTaskDialog by remember { mutableStateOf(initialType == QuickAddInitialType.TASK) }
+    var showEventDialog by remember { mutableStateOf(initialType == QuickAddInitialType.EVENT) }
+    var showProjectDialog by remember { mutableStateOf(initialType == QuickAddInitialType.PROJECT) }
+    var showGoalDialog by remember { mutableStateOf(initialType == QuickAddInitialType.GOAL) }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            dismissOnBackPress = true,
-            dismissOnClickOutside = true
-        )
-    ) {
+    if (initialType == QuickAddInitialType.NONE) {
+        Dialog(
+            onDismissRequest = onDismiss,
+            properties = DialogProperties(
+                usePlatformDefaultWidth = false,
+                dismissOnBackPress = true,
+                dismissOnClickOutside = true
+            )
+        ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -256,6 +272,7 @@ fun QuickAddBottomSheet(
             }
         }
     }
+}
 
     if (showTaskDialog) {
         CreateTaskDialog(
@@ -440,7 +457,7 @@ fun WhackaDatePickerField(
         DatePickerDialog(
             onDismissRequest = { showDialog = false },
             confirmButton = {
-                TextButton(
+                Button(
                     onClick = {
                         datePickerState.selectedDateMillis?.let { millis ->
                             val calendar = java.util.Calendar.getInstance()
@@ -455,29 +472,45 @@ fun WhackaDatePickerField(
                             onDateSelected(formatted)
                         }
                         showDialog = false
-                    }
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = Color.White
+                    ),
+                    modifier = Modifier.testTag("date_picker_confirm_btn")
                 ) {
-                    Text("اختيار", fontWeight = FontWeight.Bold)
+                    Text("تم", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDialog = false }) {
+                OutlinedButton(
+                    onClick = { showDialog = false },
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.testTag("date_picker_cancel_btn")
+                ) {
                     Text("إلغاء")
                 }
             },
+            shape = RoundedCornerShape(24.dp),
             properties = DialogProperties(usePlatformDefaultWidth = false),
             modifier = Modifier
-                .fillMaxWidth(0.95f)
-                .padding(vertical = 16.dp)
+                .fillMaxWidth(0.9f)
+                .padding(vertical = 12.dp)
         ) {
             Box(
                 modifier = Modifier
-                    .weight(1f, fill = false)
+                    .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
             ) {
                 DatePicker(
                     state = datePickerState,
-                    modifier = Modifier.padding(horizontal = 4.dp)
+                    title = null,
+                    headline = null,
+                    showModeToggle = false,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp)
                 )
             }
         }
@@ -612,6 +645,7 @@ fun CreateTaskDialog(
     var deadlineText by remember { mutableStateOf("") }
     var isFixed by remember { mutableStateOf(false) }
     var isLater by remember { mutableStateOf(false) }
+    var isWeeklyRecurring by remember { mutableStateOf(false) }
     val selectedReminders = remember { mutableStateListOf("15 دقيقة قبل") }
 
     var projectMenuExpanded by remember { mutableStateOf(false) }
@@ -913,58 +947,101 @@ fun CreateTaskDialog(
                         }
                     }
 
-                    // 9. Checkboxes Row ("موعد ثابت" & "لاحقاً")
-                    Row(
+                    // 9. Options Row ("موعد ثابت" & "تكرار أسبوعي" & "لاحقاً")
+                    Column(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.clickable {
-                                isFixed = !isFixed
-                                if (isFixed) isLater = false
-                            }
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Checkbox(
-                                checked = isFixed,
-                                onCheckedChange = { checked ->
-                                    isFixed = checked
-                                    if (checked) isLater = false
-                                },
-                                colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
-                            )
-                            Text(
-                                text = "موعد ثابت",
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    fontWeight = FontWeight.Medium,
-                                    fontSize = 12.sp
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.clickable {
+                                    isFixed = !isFixed
+                                    if (isFixed) isLater = false
+                                }
+                            ) {
+                                Checkbox(
+                                    checked = isFixed,
+                                    onCheckedChange = { checked ->
+                                        isFixed = checked
+                                        if (checked) isLater = false
+                                    },
+                                    colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
                                 )
-                            )
+                                Text(
+                                    text = "موعد ثابت",
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        fontWeight = FontWeight.Medium,
+                                        fontSize = 12.sp
+                                    )
+                                )
+                            }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.clickable {
+                                    isWeeklyRecurring = !isWeeklyRecurring
+                                }
+                            ) {
+                                Checkbox(
+                                    checked = isWeeklyRecurring,
+                                    onCheckedChange = { isWeeklyRecurring = it },
+                                    colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary),
+                                    modifier = Modifier.testTag("task_weekly_recurring_checkbox")
+                                )
+                                Text(
+                                    text = "تكرار أسبوعي",
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        color = if (isWeeklyRecurring) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                    )
+                                )
+                            }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.clickable {
+                                    isLater = !isLater
+                                    if (isLater) isFixed = false
+                                }
+                            ) {
+                                Checkbox(
+                                    checked = isLater,
+                                    onCheckedChange = { checked ->
+                                        isLater = checked
+                                        if (checked) isFixed = false
+                                    },
+                                    colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
+                                )
+                                Text(
+                                    text = "لاحقاً",
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        fontWeight = FontWeight.Medium,
+                                        fontSize = 12.sp
+                                    )
+                                )
+                            }
                         }
 
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.clickable {
-                                isLater = !isLater
-                                if (isLater) isFixed = false
-                            }
-                        ) {
-                            Checkbox(
-                                checked = isLater,
-                                onCheckedChange = { checked ->
-                                    isLater = checked
-                                    if (checked) isFixed = false
-                                },
-                                colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
-                            )
-                            Text(
-                                text = "لاحقاً (غير مجدولة)",
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    fontWeight = FontWeight.Medium,
-                                    fontSize = 12.sp
+                        if (isWeeklyRecurring) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "سيتم تكرار هذه المهمة أسبوعياً كل يوم بنفس التوقيت على مدار الأسابيع القادمة.",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                                 )
-                            )
+                            }
                         }
                     }
 
@@ -972,13 +1049,16 @@ fun CreateTaskDialog(
                     Button(
                         onClick = {
                             if (title.isNotBlank()) {
+                                val dateMillis = parseDateStringToMillis(scheduledDate, uiState.selectedDateTimestamp)
                                 viewModel.addTask(
                                     title = title,
                                     subtitle = if (description.isNotBlank()) description else "تصنيف: ${selectedCategory.title}",
                                     time = if (isLater) "لاحقاً" else scheduledTime,
                                     durationMinutes = durationMinutes,
                                     colorType = selectedCategory.blockColor,
-                                    isFixed = isFixed
+                                    isFixed = isFixed,
+                                    dateMillis = dateMillis,
+                                    isWeeklyRecurring = isWeeklyRecurring
                                 )
                                 onDismiss()
                             }
@@ -1531,6 +1611,7 @@ fun CreateEventDialog(
     var notes by remember { mutableStateOf("") }
     var selectedPriority by remember { mutableStateOf(TaskPriority.MEDIUM) }
     var isFixed by remember { mutableStateOf(true) }
+    var isWeeklyRecurring by remember { mutableStateOf(false) }
 
     val eventReminderOptions = listOf("5 دقائق قبل", "15 دقيقة قبل", "30 دقيقة قبل", "ساعة قبل")
     val selectedEventReminders = remember { mutableStateListOf("15 دقيقة قبل") }
@@ -1704,24 +1785,65 @@ fun CreateEventDialog(
                         }
                     }
 
-                    // Checkbox for "موعد ثابت"
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable { isFixed = !isFixed }
+                    // Checkboxes for "موعد ثابت" & "تكرار أسبوعي"
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Checkbox(
-                            checked = isFixed,
-                            onCheckedChange = { isFixed = it },
-                            colors = CheckboxDefaults.colors(checkedColor = WhackaAmber)
-                        )
-                        Text(
-                            text = "موعد ثابت (لا يقبل النقل أثناء الجدولة التكيفية)",
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontWeight = FontWeight.Medium,
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurface
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.clickable { isFixed = !isFixed }
+                        ) {
+                            Checkbox(
+                                checked = isFixed,
+                                onCheckedChange = { isFixed = it },
+                                colors = CheckboxDefaults.colors(checkedColor = WhackaAmber)
                             )
-                        )
+                            Text(
+                                text = "موعد ثابت (لا يقبل النقل أثناء الجدولة التكيفية)",
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            )
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.clickable { isWeeklyRecurring = !isWeeklyRecurring }
+                        ) {
+                            Checkbox(
+                                checked = isWeeklyRecurring,
+                                onCheckedChange = { isWeeklyRecurring = it },
+                                colors = CheckboxDefaults.colors(checkedColor = WhackaAmber),
+                                modifier = Modifier.testTag("event_weekly_recurring_checkbox")
+                            )
+                            Text(
+                                text = "تكرار أسبوعي (يتكرر كل أسبوع في نفس اليوم)",
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    color = if (isWeeklyRecurring) WhackaAmber else MaterialTheme.colorScheme.onSurface
+                                )
+                            )
+                        }
+
+                        if (isWeeklyRecurring) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = WhackaAmber.copy(alpha = 0.1f),
+                                border = BorderStroke(1.dp, WhackaAmber.copy(alpha = 0.3f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "سيظهر هذا الموعد تلقائياً في جدول هذا اليوم من كل أسبوع.",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                                    color = WhackaAmber,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
                     }
 
                     // Submit Button
@@ -1734,13 +1856,16 @@ fun CreateEventDialog(
                                     description.isNotBlank() -> description
                                     else -> "موعد ثابت"
                                 }
+                                val dateMillis = parseDateStringToMillis(eventDate, viewModel.uiState.value.selectedDateTimestamp)
                                 viewModel.addTask(
                                     title = title,
                                     subtitle = sub,
                                     time = startTime,
                                     durationMinutes = 60,
                                     colorType = BlockColor.ORANGE,
-                                    isFixed = isFixed
+                                    isFixed = isFixed,
+                                    dateMillis = dateMillis,
+                                    isWeeklyRecurring = isWeeklyRecurring
                                 )
                                 onDismiss()
                             }

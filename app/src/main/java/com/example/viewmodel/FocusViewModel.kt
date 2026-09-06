@@ -1,6 +1,7 @@
 package com.example.viewmodel
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.alarm.FocusAlarmForegroundService
@@ -29,6 +30,7 @@ import com.example.model.GoalItem
 import com.example.model.InsightType
 import com.example.model.ProjectFilterTab
 import com.example.model.ProjectItem
+import com.example.model.QuickAddInitialType
 import com.example.model.RescheduleSuggestion
 import com.example.model.ReviewPeriodTab
 import com.example.model.ReviewStats
@@ -84,6 +86,8 @@ data class FocusUiState(
     val sleepWakeTime: String = "07:00",
     val workStartTime: String = "09:00",
     val workEndTime: String = "17:00",
+    val alarmSoundTitle: String = "نغمة التطبيق الافتراضية (Default)",
+    val notificationSoundTitle: String = "نغمة الإشعار الافتراضية (Default)",
     val currentFocusTask: TaskItem = TaskItem(
         id = "focus-placeholder",
         title = "جلسة تركيز جديدة",
@@ -104,6 +108,7 @@ data class FocusUiState(
     val isAdaptiveBannerDismissed: Boolean = false,
     val showAdaptiveRescheduleSheet: Boolean = false,
     val showQuickAddSheet: Boolean = false,
+    val quickAddInitialType: QuickAddInitialType = QuickAddInitialType.NONE,
     val aiState: AIActionState = AIActionState.Idle,
     val reviewStats: ReviewStats = ReviewStats(
         completedCount = 0,
@@ -174,7 +179,9 @@ class FocusViewModel(
             sleepBedtime = prefsManager.sleepBedtime,
             sleepWakeTime = prefsManager.sleepWakeTime,
             workStartTime = prefsManager.workStartTime,
-            workEndTime = prefsManager.workEndTime
+            workEndTime = prefsManager.workEndTime,
+            alarmSoundTitle = prefsManager.alarmSoundTitle,
+            notificationSoundTitle = prefsManager.notificationSoundTitle
         )
     )
 
@@ -189,6 +196,8 @@ class FocusViewModel(
         val initialSleepWakeTime = prefsManager.sleepWakeTime
         val initialWorkStart = prefsManager.workStartTime
         val initialWorkEnd = prefsManager.workEndTime
+        val initialAlarmSoundTitle = prefsManager.alarmSoundTitle
+        val initialNotifSoundTitle = prefsManager.notificationSoundTitle
 
         _uiPreferences.update {
             it.copy(
@@ -201,7 +210,9 @@ class FocusViewModel(
                 sleepBedtime = initialSleepBedtime,
                 sleepWakeTime = initialSleepWakeTime,
                 workStartTime = initialWorkStart,
-                workEndTime = initialWorkEnd
+                workEndTime = initialWorkEnd,
+                alarmSoundTitle = initialAlarmSoundTitle,
+                notificationSoundTitle = initialNotifSoundTitle
             )
         }
 
@@ -404,13 +415,13 @@ class FocusViewModel(
 
         val dynamicWeekDays = SchedulingEngine.buildWeekDays(
             baseDateMillis = _selectedWeekBaseTimestamp.value,
-            selectedDateMillis = _selectedDateTimestamp.value,
+            selectedDateMillis = prefs.selectedDateTimestamp,
             allTasks = entityList
         )
 
-        val bounds = getDateBounds(_selectedDateTimestamp.value)
+        val bounds = getDateBounds(prefs.selectedDateTimestamp)
         val selectedDayTasks = entityList.filter { it.date in bounds.first..bounds.second }
-        val dayTasksForTimeline = if (selectedDayTasks.isEmpty() && isSameDay(_selectedDateTimestamp.value, System.currentTimeMillis())) {
+        val dayTasksForTimeline = if (selectedDayTasks.isEmpty() && isSameDay(prefs.selectedDateTimestamp, System.currentTimeMillis())) {
             entityList
         } else {
             selectedDayTasks
@@ -761,7 +772,14 @@ class FocusViewModel(
     }
 
     fun setShowQuickAddSheet(show: Boolean) {
-        _uiPreferences.update { it.copy(showQuickAddSheet = show) }
+        _uiPreferences.update {
+            if (!show) it.copy(showQuickAddSheet = false, quickAddInitialType = QuickAddInitialType.NONE)
+            else it.copy(showQuickAddSheet = true)
+        }
+    }
+
+    fun setQuickAddInitialType(type: QuickAddInitialType) {
+        _uiPreferences.update { it.copy(quickAddInitialType = type) }
     }
 
     // ==========================================
@@ -1004,11 +1022,13 @@ class FocusViewModel(
 
     fun selectDate(timestamp: Long) {
         _selectedDateTimestamp.value = timestamp
+        _uiPreferences.update { it.copy(selectedDateTimestamp = timestamp) }
     }
 
     fun selectDay(day: DayItem) {
         if (day.timestamp > 0L) {
             _selectedDateTimestamp.value = day.timestamp
+            _uiPreferences.update { it.copy(selectedDateTimestamp = day.timestamp) }
         }
     }
 
@@ -1018,6 +1038,57 @@ class FocusViewModel(
             add(Calendar.WEEK_OF_YEAR, deltaWeeks)
         }
         _selectedWeekBaseTimestamp.value = cal.timeInMillis
+        _selectedDateTimestamp.value = cal.timeInMillis
+        _uiPreferences.update { it.copy(selectedDateTimestamp = cal.timeInMillis) }
+    }
+
+    fun updateAlarmSound(uriString: String?, title: String) {
+        prefsManager.alarmSoundUri = uriString
+        prefsManager.alarmSoundTitle = title
+        _uiPreferences.update { it.copy(alarmSoundTitle = title) }
+        alarmManager.createNotificationChannels()
+    }
+
+    fun updateNotificationSound(uriString: String?, title: String) {
+        prefsManager.notificationSoundUri = uriString
+        prefsManager.notificationSoundTitle = title
+        _uiPreferences.update { it.copy(notificationSoundTitle = title) }
+        alarmManager.createNotificationChannels()
+    }
+
+    /**
+     * Distributes parsed schedule items accurately across days of the week and handles weekly recurrence.
+     */
+    fun importScheduleDrafts(drafts: List<com.example.util.ImportedScheduleDraft>) {
+        viewModelScope.launch {
+            val baseDate = _selectedDateTimestamp.value
+            for (draft in drafts) {
+                if (!draft.isSelected || draft.title.isBlank()) continue
+
+                // Distribute across days of week; if weekly recurring, repeat for 4 weeks ahead
+                val recurrenceWeeks = if (draft.isWeeklyRecurring) 4 else 1
+                for (weekOffset in 0 until recurrenceWeeks) {
+                    val targetDate = SchedulingEngine.computeDateForDayOfWeek(
+                        baseDateMillis = baseDate,
+                        targetCalendarDay = draft.dayOfWeek,
+                        weekOffset = weekOffset
+                    )
+
+                    addTask(
+                        title = draft.title,
+                        subtitle = draft.subtitle,
+                        time = draft.timeText,
+                        durationMinutes = draft.durationMinutes,
+                        colorType = BlockColor.INDIGO,
+                        isFixed = draft.isFixed,
+                        startTime = draft.startTime,
+                        endTime = draft.endTime,
+                        alertType = TaskAlertType.SMART_ALARM,
+                        dateMillis = targetDate
+                    )
+                }
+            }
+        }
     }
 
     fun checkCanAddTask(durationMinutes: Int): Boolean {
@@ -1036,42 +1107,84 @@ class FocusViewModel(
         startTime: String? = null,
         endTime: String? = null,
         alertType: TaskAlertType = TaskAlertType.SMART_ALARM,
-        projectId: String? = null
+        projectId: String? = null,
+        dateMillis: Long = _selectedDateTimestamp.value,
+        isWeeklyRecurring: Boolean = false,
+        recurringWeeks: Int = 14
     ): Boolean {
         if (title.isBlank()) return false
 
-        val currentBooked = uiState.value.dailyCapacity.bookedMinutes
-        val total = uiState.value.dailyCapacity.totalAwakeMinutes
-        if (currentBooked + durationMinutes > total) {
-            _uiPreferences.update {
-                it.copy(capacityErrorMessage = "⚠️ اليوم ممتلئ بالفعل. لا توجد سعة كافية لهذه المهمة.")
-            }
-            return false
-        }
-
-        val newEntity = Task(
-            id = "task-${UUID.randomUUID()}",
-            title = title.trim(),
-            subtitle = subtitle.ifBlank { if (isFixed) "حدث ثابت" else "مهمة مرنة" },
-            durationMinutes = durationMinutes,
-            scheduledTime = time,
-            isCompleted = false,
-            date = _selectedDateTimestamp.value,
-            categoryColor = colorType.name,
-            isFixed = isFixed,
-            startTime = startTime,
-            endTime = endTime,
-            alertType = alertType.name,
-            projectId = projectId
-        )
-
         viewModelScope.launch {
-            try {
-                repository.addTaskWithCapacityCheck(newEntity)
-                alarmManager.scheduleTaskAlarm(newEntity)
-                _uiPreferences.update { it.copy(capacityErrorMessage = null) }
-            } catch (e: CapacityExceededException) {
-                _uiPreferences.update { it.copy(capacityErrorMessage = e.message) }
+            if (isWeeklyRecurring) {
+                val totalWeeks = recurringWeeks.coerceIn(1, 24)
+                val baseCal = Calendar.getInstance().apply { timeInMillis = dateMillis }
+                for (w in 0 until totalWeeks) {
+                    val cal = Calendar.getInstance().apply {
+                        timeInMillis = baseCal.timeInMillis
+                        add(Calendar.WEEK_OF_YEAR, w)
+                    }
+                    val instanceDate = cal.timeInMillis
+                    val recurringEntity = Task(
+                        id = "task-${UUID.randomUUID()}",
+                        title = title.trim(),
+                        subtitle = subtitle.ifBlank { if (isFixed) "موعد أسبوعي مجدول" else "مهمة أسبوعية" },
+                        durationMinutes = durationMinutes,
+                        scheduledTime = time,
+                        isCompleted = false,
+                        date = instanceDate,
+                        categoryColor = colorType.name,
+                        isFixed = isFixed,
+                        startTime = startTime,
+                        endTime = endTime,
+                        alertType = alertType.name,
+                        projectId = projectId
+                    )
+                    try {
+                        repository.insertTask(recurringEntity)
+                        alarmManager.scheduleTaskAlarm(recurringEntity)
+                    } catch (e: Exception) {
+                        Log.e("FocusViewModel", "Failed to schedule recurring instance for week $w", e)
+                    }
+                }
+                _uiPreferences.update {
+                    it.copy(
+                        capacityErrorMessage = null,
+                        syncSuccessMessage = "تمت جدولة $totalWeeks فترات أسبوعية طوال الفصل مع تنبيهاتها بنجاح 🎉"
+                    )
+                }
+            } else {
+                val currentBooked = uiState.value.dailyCapacity.bookedMinutes
+                val total = uiState.value.dailyCapacity.totalAwakeMinutes
+                if (currentBooked + durationMinutes > total) {
+                    _uiPreferences.update {
+                        it.copy(capacityErrorMessage = "⚠️ اليوم ممتلئ بالفعل. لا توجد سعة كافية لهذه المهمة.")
+                    }
+                    return@launch
+                }
+
+                val newEntity = Task(
+                    id = "task-${UUID.randomUUID()}",
+                    title = title.trim(),
+                    subtitle = subtitle.ifBlank { if (isFixed) "حدث ثابت" else "مهمة مرنة" },
+                    durationMinutes = durationMinutes,
+                    scheduledTime = time,
+                    isCompleted = false,
+                    date = dateMillis,
+                    categoryColor = colorType.name,
+                    isFixed = isFixed,
+                    startTime = startTime,
+                    endTime = endTime,
+                    alertType = alertType.name,
+                    projectId = projectId
+                )
+
+                try {
+                    repository.addTaskWithCapacityCheck(newEntity)
+                    alarmManager.scheduleTaskAlarm(newEntity)
+                    _uiPreferences.update { it.copy(capacityErrorMessage = null) }
+                } catch (e: CapacityExceededException) {
+                    _uiPreferences.update { it.copy(capacityErrorMessage = e.message) }
+                }
             }
         }
         return true

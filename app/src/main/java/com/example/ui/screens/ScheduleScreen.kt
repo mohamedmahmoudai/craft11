@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,6 +27,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddCircleOutline
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.CheckCircle
@@ -41,6 +44,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -74,7 +78,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.rememberCoroutineScope
 import com.example.model.BlockColor
 import com.example.model.DailyCapacityState
+import com.example.model.DayItem
 import com.example.model.TimelineItem
+import com.example.viewmodel.FocusViewModel
 import com.example.ui.components.ImportScheduleReviewDialog
 import com.example.ui.components.WhackaFlatTextField
 import com.example.ui.theme.WhackaAmber
@@ -97,6 +103,10 @@ fun ScheduleScreen(
     timelineItems: List<TimelineItem>,
     dailyCapacity: DailyCapacityState,
     selectedDateMillis: Long,
+    days: List<DayItem> = emptyList(),
+    onSelectDay: (DayItem) -> Unit = {},
+    onSelectDateMillis: (Long) -> Unit = {},
+    onQuickAddEvent: () -> Unit = {},
     onTriggerAlarm: (TimelineItem.TaskBlock) -> Unit,
     onToggleCompletion: (String) -> Unit = {},
     onDeleteTask: (String) -> Unit = {},
@@ -156,6 +166,42 @@ fun ScheduleScreen(
     val dateHeaderStr = remember(selectedDateMillis) {
         val sdf = SimpleDateFormat("EEEE، d MMMM", Locale("ar"))
         sdf.format(selectedDateMillis)
+    }
+
+    val displayedDays = remember(days, selectedDateMillis) {
+        if (days.isNotEmpty()) days
+        else {
+            val cal = Calendar.getInstance().apply {
+                timeInMillis = selectedDateMillis
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            while (cal.get(Calendar.DAY_OF_WEEK) != Calendar.SATURDAY) {
+                cal.add(Calendar.DAY_OF_MONTH, -1)
+            }
+            val names = listOf("السبت", "الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة")
+            val todayCal = Calendar.getInstance()
+            val selCal = Calendar.getInstance().apply { timeInMillis = selectedDateMillis }
+            (0..6).map { i ->
+                val ts = cal.timeInMillis
+                val num = cal.get(Calendar.DAY_OF_MONTH)
+                val name = names[i]
+                val isSel = (cal.get(Calendar.YEAR) == selCal.get(Calendar.YEAR) &&
+                        cal.get(Calendar.DAY_OF_YEAR) == selCal.get(Calendar.DAY_OF_YEAR))
+                val isTod = (cal.get(Calendar.YEAR) == todayCal.get(Calendar.YEAR) &&
+                        cal.get(Calendar.DAY_OF_YEAR) == todayCal.get(Calendar.DAY_OF_YEAR))
+                cal.add(Calendar.DAY_OF_MONTH, 1)
+                DayItem(
+                    dayName = name,
+                    dayNumber = num,
+                    isSelected = isSel,
+                    isToday = isTod,
+                    timestamp = ts
+                )
+            }
+        }
     }
 
     val taskCount = timelineItems.count { it is TimelineItem.TaskBlock }
@@ -260,37 +306,156 @@ fun ScheduleScreen(
                 }
             }
 
-            Text(
-                text = "$dateHeaderStr • $taskCount فترات مجدولة",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            if (taskCount == 0) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(24.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+            // Highlighted Header Container with Horizontal Week-Day Strip & Selected Day Quick Action
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(22.dp),
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)),
+                shadowElevation = 2.dp
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
+                    // Top row: Full date + Quick Action (+ موعد جديد لليوم)
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Schedule,
-                            contentDescription = null,
-                            tint = WhackaPrimaryAccent,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(
-                            text = "يومك فارغ تماماً. لديك متسع كبير من الوقت المتاح.",
-                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = dateHeaderStr,
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                ),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = if (taskCount == 0) "لا توجد فترات مجدولة (يوم متاح)" else "$taskCount فترات مجدولة",
+                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                color = if (taskCount == 0) WhackaEmerald else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        // Quick Action to add event for this selected day
+                        Button(
+                            onClick = onQuickAddEvent,
+                            modifier = Modifier
+                                .height(34.dp)
+                                .testTag("schedule_quick_add_event_btn"),
+                            shape = RoundedCornerShape(50),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = WhackaAmber,
+                                contentColor = Color.White
+                            ),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = null,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "+ موعد جديد",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp
+                                )
+                            )
+                        }
+                    }
+
+                    // Horizontal Week-Day Strip (LazyRow)
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(horizontal = 2.dp)
+                    ) {
+                        items(displayedDays) { day ->
+                            val isSelected = FocusViewModel.isSameDay(day.timestamp, selectedDateMillis)
+                            val isToday = day.isToday
+
+                            Surface(
+                                modifier = Modifier
+                                    .width(48.dp)
+                                    .height(68.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .clickable {
+                                        onSelectDay(day)
+                                        onSelectDateMillis(day.timestamp)
+                                    }
+                                    .testTag("schedule_day_pill_${day.dayName}"),
+                                shape = RoundedCornerShape(16.dp),
+                                color = when {
+                                    isSelected -> MaterialTheme.colorScheme.primary
+                                    isToday -> MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                                    else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                                },
+                                border = BorderStroke(
+                                    width = if (isSelected) 2.dp else if (isToday) 1.5.dp else 1.dp,
+                                    color = when {
+                                        isSelected -> MaterialTheme.colorScheme.primary
+                                        isToday -> MaterialTheme.colorScheme.primary
+                                        else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+                                    }
+                                ),
+                                shadowElevation = if (isSelected) 3.dp else 0.dp
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(vertical = 6.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = day.dayName,
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Medium,
+                                            fontSize = 11.sp
+                                        ),
+                                        color = when {
+                                            isSelected -> Color.White
+                                            isToday -> MaterialTheme.colorScheme.primary
+                                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                        }
+                                    )
+
+                                    Text(
+                                        text = "${day.dayNumber}",
+                                        style = MaterialTheme.typography.titleMedium.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 15.sp
+                                        ),
+                                        color = when {
+                                            isSelected -> Color.White
+                                            isToday -> MaterialTheme.colorScheme.primary
+                                            else -> MaterialTheme.colorScheme.onSurface
+                                        }
+                                    )
+
+                                    Box(
+                                        modifier = Modifier
+                                            .size(5.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                when {
+                                                    isSelected -> Color.White
+                                                    isToday -> MaterialTheme.colorScheme.primary
+                                                    day.bookedMinutes > 0 -> WhackaAmber
+                                                    else -> Color.Transparent
+                                                }
+                                            )
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -397,6 +562,9 @@ fun ScheduleScreen(
                                         .height(blockHeight),
                                     onClick = {
                                         selectedTaskBlock = item
+                                    },
+                                    onDelete = {
+                                        item.originalTaskId?.let { onDeleteTask(it) }
                                     }
                                 )
                             }
@@ -841,7 +1009,8 @@ fun ScheduleScreen(
 fun TaskBlockCard(
     block: TimelineItem.TaskBlock,
     modifier: Modifier = Modifier,
-    onClick: () -> Unit = {}
+    onClick: () -> Unit = {},
+    onDelete: (() -> Unit)? = null
 ) {
     val baseColor = when (block.colorType) {
         BlockColor.INDIGO, BlockColor.TEAL -> WhackaPrimaryAccent
@@ -880,7 +1049,8 @@ fun TaskBlockCard(
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.weight(1f, fill = false)
                     ) {
                         Box(
                             modifier = Modifier
@@ -896,24 +1066,48 @@ fun TaskBlockCard(
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp
                             ),
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1
                         )
                     }
 
-                    if (block.isFixed) {
-                        Surface(
-                            shape = RoundedCornerShape(50),
-                            color = WhackaEmerald.copy(alpha = 0.2f)
-                        ) {
-                            Text(
-                                text = "ثابت",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold
-                                ),
-                                color = WhackaEmerald,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        if (block.isFixed) {
+                            Surface(
+                                shape = RoundedCornerShape(50),
+                                color = WhackaEmerald.copy(alpha = 0.2f)
+                            ) {
+                                Text(
+                                    text = "ثابت",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold
+                                    ),
+                                    color = WhackaEmerald,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+
+                        if (onDelete != null) {
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clip(CircleShape)
+                                    .clickable { onDelete() }
+                                    .testTag("delete_task_quick_${block.id}"),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.DeleteOutline,
+                                    contentDescription = "حذف الموعد",
+                                    tint = WhackaRed.copy(alpha = 0.8f),
+                                    modifier = Modifier.size(15.dp)
+                                )
+                            }
                         }
                     }
                 }

@@ -119,9 +119,8 @@ class FocusAlarmForegroundService : Service() {
 
         // 1. Play Loud Alarm Audio with USAGE_ALARM
         try {
-            val alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
-                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+            val alarmUri = com.example.data.preferences.UserPreferencesManager(applicationContext)
+                .getEffectiveAlarmUri(applicationContext)
 
             val audioAttributes = AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_ALARM)
@@ -206,8 +205,8 @@ class FocusAlarmForegroundService : Service() {
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or
                 (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
 
-        // Full-screen Intent opening Smart Alarm Screen in MainActivity
-        val fullScreenIntent = Intent(this, MainActivity::class.java).apply {
+        // Full-screen Intent opening SmartAlarmActivity in isolated mode
+        val fullScreenIntent = Intent(this, com.example.ui.screens.SmartAlarmActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             putExtra(FocusAlarmManager.EXTRA_TRIGGER_SMART_ALARM, true)
             putExtra(FocusAlarmManager.EXTRA_TASK_ID, taskId)

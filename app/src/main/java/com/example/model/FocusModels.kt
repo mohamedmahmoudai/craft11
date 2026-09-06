@@ -48,6 +48,14 @@ enum class BlockColor {
     TEAL
 }
 
+enum class QuickAddInitialType {
+    NONE,
+    TASK,
+    EVENT,
+    PROJECT,
+    GOAL
+}
+
 enum class DayCapacityLevel {
     LIGHT,      // < 40%
     BALANCED,   // 40% - 80%

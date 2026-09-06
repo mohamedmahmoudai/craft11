@@ -72,6 +72,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.model.AIActionState
 import com.example.model.FocusNavTab
+import com.example.model.QuickAddInitialType
 import com.example.model.TimerStatus
 import com.example.ui.components.AITaskBreakdownDialog
 import com.example.ui.components.AdaptiveRescheduleBottomSheet
@@ -209,6 +210,13 @@ fun FocusCraftApp(
                                     timelineItems = uiState.selectedDateTimeline,
                                     dailyCapacity = uiState.dailyCapacity,
                                     selectedDateMillis = uiState.selectedDateTimestamp,
+                                    days = uiState.weekDays,
+                                    onSelectDay = { viewModel.selectDay(it) },
+                                    onSelectDateMillis = { viewModel.selectDate(it) },
+                                    onQuickAddEvent = {
+                                        viewModel.setQuickAddInitialType(QuickAddInitialType.EVENT)
+                                        viewModel.setShowQuickAddSheet(true)
+                                    },
                                     onTriggerAlarm = { viewModel.startFocusTimer(uiState.currentFocusTask) },
                                     onToggleCompletion = { viewModel.toggleTaskCompletion(it) },
                                     onDeleteTask = { viewModel.deleteTask(it) },
@@ -326,6 +334,7 @@ fun FocusCraftApp(
             if (uiState.showQuickAddSheet) {
                 QuickAddBottomSheet(
                     viewModel = viewModel,
+                    initialType = uiState.quickAddInitialType,
                     onDismiss = { viewModel.setShowQuickAddSheet(false) }
                 )
             }
