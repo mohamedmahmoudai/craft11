@@ -233,6 +233,9 @@ fun FocusCraftApp(
                                             durationMinutes = dur,
                                             isFixed = fixed
                                         )
+                                    },
+                                    onImportScheduleDrafts = { drafts ->
+                                        viewModel.importScheduleDrafts(drafts)
                                     }
                                 )
                             }
@@ -296,6 +299,14 @@ fun FocusCraftApp(
                                     },
                                     onTestAlarm = {
                                         viewModel.triggerTestSmartAlarm()
+                                    },
+                                    alarmSoundTitle = uiState.alarmSoundTitle,
+                                    notificationSoundTitle = uiState.notificationSoundTitle,
+                                    onUpdateAlarmSound = { uri, title ->
+                                        viewModel.updateAlarmSound(uri, title)
+                                    },
+                                    onUpdateNotificationSound = { uri, title ->
+                                        viewModel.updateNotificationSound(uri, title)
                                     }
                                 )
                             }

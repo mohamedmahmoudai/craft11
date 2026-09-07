@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -22,6 +23,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.EventRepeat
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
@@ -71,7 +74,7 @@ fun ImportScheduleReviewDialog(
         Box(
             modifier = modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 20.dp)
+                .padding(horizontal = 14.dp, vertical = 20.dp)
                 .imePadding()
                 .testTag("ocr_schedule_review_dialog"),
             contentAlignment = Alignment.Center
@@ -86,8 +89,8 @@ fun ImportScheduleReviewDialog(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                        .padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     // Header
                     Row(
@@ -112,7 +115,7 @@ fun ImportScheduleReviewDialog(
 
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
-                                text = "مراجعة الجدول المستورد",
+                                text = "مراجعة الجدول الدراسي الذكي",
                                 style = MaterialTheme.typography.titleLarge.copy(
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 17.sp,
@@ -130,7 +133,7 @@ fun ImportScheduleReviewDialog(
                                     modifier = Modifier.size(13.dp)
                                 )
                                 Text(
-                                    text = "تم الاستخراج بواسطة ML Kit الذكي",
+                                    text = "تم التوزيع حسب أيام الأسبوع والمصفوفة الزمنية",
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         fontSize = 11.sp,
                                         color = WhackaPrimaryAccent
@@ -142,13 +145,40 @@ fun ImportScheduleReviewDialog(
                         Spacer(modifier = Modifier.size(36.dp))
                     }
 
-                    Text(
-                        text = "راجع الفترات المستخرجة من الصورة وعدّلها قبل إضافتها لجدول اليوم:",
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    )
+                    // Bulk selection controls
+                    if (items.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val allSelected = items.all { it.isSelected }
+                            TextButton(
+                                onClick = {
+                                    val newSelect = !allSelected
+                                    items.forEachIndexed { i, draft ->
+                                        items[i] = draft.copy(isSelected = newSelect)
+                                    }
+                                }
+                            ) {
+                                Text(
+                                    text = if (allSelected) "إلغاء تحديد الكل" else "تحديد الكل",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        color = WhackaPrimaryAccent,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                )
+                            }
+
+                            Text(
+                                text = "${items.count { it.isSelected }} من ${items.size} مادة محددة",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 11.sp
+                                )
+                            )
+                        }
+                    }
 
                     if (items.isEmpty()) {
                         Surface(
@@ -158,7 +188,7 @@ fun ImportScheduleReviewDialog(
                             border = BorderStroke(1.dp, WhackaAmber.copy(alpha = 0.4f))
                         ) {
                             Text(
-                                text = "لم نتمكن من قراءة فترات زمنية من الصورة. يرجى التأكد من وضوح الصورة وإعادة المحاولة.",
+                                text = "لم نتمكن من قراءة مواد دراسية واضحة من الجدول. يرجى التأكد من وضوح الصورة وزاوية التصوير.",
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -171,47 +201,59 @@ fun ImportScheduleReviewDialog(
                         LazyColumn(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(max = 380.dp),
+                                .heightIn(max = 390.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             itemsIndexed(items, key = { _, item -> item.id }) { index, item ->
                                 Surface(
                                     modifier = Modifier.fillMaxWidth(),
                                     shape = RoundedCornerShape(16.dp),
-                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                    border = BorderStroke(
+                                        1.dp,
+                                        if (item.isSelected) WhackaPrimaryAccent.copy(alpha = 0.5f)
+                                        else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                                    )
                                 ) {
                                     Column(
                                         modifier = Modifier.padding(12.dp),
                                         verticalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
+                                        // Header Row: Checkbox, Day Badge, and Delete
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
                                             verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
-                                            Checkbox(
-                                                checked = item.isSelected,
-                                                onCheckedChange = { isChecked ->
-                                                    items[index] = item.copy(isSelected = isChecked)
-                                                },
-                                                colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
-                                            )
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Checkbox(
+                                                    checked = item.isSelected,
+                                                    onCheckedChange = { isChecked ->
+                                                        items[index] = item.copy(isSelected = isChecked)
+                                                    },
+                                                    colors = CheckboxDefaults.colors(checkedColor = WhackaPrimaryAccent)
+                                                )
 
-                                            OutlinedTextField(
-                                                value = item.title,
-                                                onValueChange = { newTitle ->
-                                                    items[index] = item.copy(title = newTitle)
-                                                },
-                                                label = { Text("المهمة / المادة", fontSize = 11.sp) },
-                                                singleLine = true,
-                                                shape = RoundedCornerShape(12.dp),
-                                                colors = OutlinedTextFieldDefaults.colors(
-                                                    focusedContainerColor = MaterialTheme.colorScheme.surface,
-                                                    unfocusedContainerColor = MaterialTheme.colorScheme.surface
-                                                ),
-                                                modifier = Modifier.weight(1f)
-                                            )
+                                                // Day Pill Badge
+                                                Surface(
+                                                    shape = RoundedCornerShape(50),
+                                                    color = WhackaPrimaryAccent.copy(alpha = 0.15f),
+                                                    border = BorderStroke(1.dp, WhackaPrimaryAccent.copy(alpha = 0.4f))
+                                                ) {
+                                                    Text(
+                                                        text = item.dayName,
+                                                        style = MaterialTheme.typography.labelSmall.copy(
+                                                            fontWeight = FontWeight.Bold,
+                                                            fontSize = 11.sp,
+                                                            color = WhackaPrimaryAccent
+                                                        ),
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                                    )
+                                                }
+                                            }
 
                                             IconButton(
                                                 onClick = { items.removeAt(index) },
@@ -226,6 +268,41 @@ fun ImportScheduleReviewDialog(
                                             }
                                         }
 
+                                        // Subject Title
+                                        OutlinedTextField(
+                                            value = item.title,
+                                            onValueChange = { newTitle ->
+                                                items[index] = item.copy(title = newTitle)
+                                            },
+                                            label = { Text("اسم المادة / المحاضرة", fontSize = 11.sp) },
+                                            singleLine = true,
+                                            shape = RoundedCornerShape(12.dp),
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                                                unfocusedContainerColor = MaterialTheme.colorScheme.surface
+                                            ),
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+
+                                        // Notes / Location / Section
+                                        if (item.subtitle.isNotBlank() || item.isSelected) {
+                                            OutlinedTextField(
+                                                value = item.subtitle,
+                                                onValueChange = { newSub ->
+                                                    items[index] = item.copy(subtitle = newSub)
+                                                },
+                                                label = { Text("الموقع / القاعة / الملاحظات", fontSize = 11.sp) },
+                                                singleLine = true,
+                                                shape = RoundedCornerShape(12.dp),
+                                                colors = OutlinedTextFieldDefaults.colors(
+                                                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                                                    unfocusedContainerColor = MaterialTheme.colorScheme.surface
+                                                ),
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+                                        }
+
+                                        // Time, Duration Row
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -236,14 +313,22 @@ fun ImportScheduleReviewDialog(
                                                 onValueChange = { newTime ->
                                                     items[index] = item.copy(timeText = newTime)
                                                 },
-                                                label = { Text("الوقت", fontSize = 11.sp) },
+                                                label = { Text("التوقيت", fontSize = 11.sp) },
+                                                leadingIcon = {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Schedule,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(16.dp),
+                                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                },
                                                 singleLine = true,
                                                 shape = RoundedCornerShape(12.dp),
                                                 colors = OutlinedTextFieldDefaults.colors(
                                                     focusedContainerColor = MaterialTheme.colorScheme.surface,
                                                     unfocusedContainerColor = MaterialTheme.colorScheme.surface
                                                 ),
-                                                modifier = Modifier.weight(1f)
+                                                modifier = Modifier.weight(1.3f)
                                             )
 
                                             OutlinedTextField(
@@ -259,9 +344,60 @@ fun ImportScheduleReviewDialog(
                                                     focusedContainerColor = MaterialTheme.colorScheme.surface,
                                                     unfocusedContainerColor = MaterialTheme.colorScheme.surface
                                                 ),
-                                                modifier = Modifier.weight(0.7f)
+                                                modifier = Modifier.weight(0.8f)
                                             )
+                                        }
 
+                                        // Toggles: Weekly Recurring (Enabled by default) & Fixed
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            // Weekly recurring toggle (ENABLED BY DEFAULT)
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .clickable {
+                                                        items[index] = item.copy(isWeeklyRecurring = !item.isWeeklyRecurring)
+                                                    }
+                                                    .padding(vertical = 4.dp)
+                                            ) {
+                                                Switch(
+                                                    checked = item.isWeeklyRecurring,
+                                                    onCheckedChange = { recurring ->
+                                                        items[index] = item.copy(isWeeklyRecurring = recurring)
+                                                    },
+                                                    colors = SwitchDefaults.colors(
+                                                        checkedThumbColor = Color.White,
+                                                        checkedTrackColor = WhackaPrimaryAccent
+                                                    ),
+                                                    modifier = Modifier.testTag("weekly_recurring_switch_${index}")
+                                                )
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.EventRepeat,
+                                                        contentDescription = null,
+                                                        tint = WhackaPrimaryAccent,
+                                                        modifier = Modifier.size(14.dp)
+                                                    )
+                                                    Text(
+                                                        text = "تكرار أسبوعي",
+                                                        style = MaterialTheme.typography.bodySmall.copy(
+                                                            fontSize = 11.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = MaterialTheme.colorScheme.onSurface
+                                                        )
+                                                    )
+                                                }
+                                            }
+
+                                            // Fixed vs Flexible toggle
                                             Row(
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -270,7 +406,7 @@ fun ImportScheduleReviewDialog(
                                                     .clickable {
                                                         items[index] = item.copy(isFixed = !item.isFixed)
                                                     }
-                                                    .padding(horizontal = 4.dp)
+                                                    .padding(vertical = 4.dp)
                                             ) {
                                                 Switch(
                                                     checked = item.isFixed,
@@ -283,10 +419,11 @@ fun ImportScheduleReviewDialog(
                                                     )
                                                 )
                                                 Text(
-                                                    text = if (item.isFixed) "ثابت" else "مرن",
+                                                    text = if (item.isFixed) "موعد ثابت" else "مرن",
                                                     style = MaterialTheme.typography.bodySmall.copy(
                                                         fontSize = 11.sp,
-                                                        fontWeight = FontWeight.Medium
+                                                        fontWeight = FontWeight.Medium,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                                     )
                                                 )
                                             }
@@ -328,7 +465,7 @@ fun ImportScheduleReviewDialog(
                             )
                         ) {
                             Text(
-                                text = "استيراد المختار ($selectedCount)",
+                                text = "توزيع المواد في الجدول ($selectedCount)",
                                 style = MaterialTheme.typography.titleMedium.copy(
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 14.sp

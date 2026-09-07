@@ -113,6 +113,7 @@ fun ScheduleScreen(
     onRescheduleTask: (String, String, String?, String?, Int) -> Unit = { _, _, _, _, _ -> },
     onAddNewTaskAtTime: (Float) -> Unit = {},
     onImportTask: (String, String, Int, Boolean) -> Unit = { _, _, _, _ -> },
+    onImportScheduleDrafts: (List<ImportedScheduleDraft>) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -377,7 +378,7 @@ fun ScheduleScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         contentPadding = PaddingValues(horizontal = 2.dp)
                     ) {
-                        items(displayedDays) { day ->
+                        items(displayedDays, key = { it.timestamp }) { day ->
                             val isSelected = FocusViewModel.isSameDay(day.timestamp, selectedDateMillis)
                             val isToday = day.isToday
 
@@ -945,9 +946,7 @@ fun ScheduleScreen(
             initialDrafts = ocrDrafts,
             onDismiss = { showOcrReviewDialog = false },
             onConfirmImport = { selectedDrafts ->
-                selectedDrafts.forEach { draft ->
-                    onImportTask(draft.title, draft.timeText, draft.durationMinutes, draft.isFixed)
-                }
+                onImportScheduleDrafts(selectedDrafts)
                 showOcrReviewDialog = false
             }
         )

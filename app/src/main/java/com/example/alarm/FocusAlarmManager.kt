@@ -226,6 +226,27 @@ class FocusAlarmManager(private val context: Context) {
     }
 
     /**
+     * Snoozes an alarm by a specified number of minutes (default 10 minutes).
+     */
+    fun snoozeAlarm(taskId: String, taskTitle: String, taskSubtitle: String, snoozeMinutes: Int = 10) {
+        val triggerAtMillis = System.currentTimeMillis() + (snoozeMinutes * 60 * 1000L)
+        val intent = Intent(context, FocusAlarmReceiver::class.java).apply {
+            action = ACTION_START_ALARM
+            putExtra(EXTRA_TASK_ID, taskId)
+            putExtra(EXTRA_TASK_TITLE, taskTitle)
+            putExtra(EXTRA_TASK_SUBTITLE, taskSubtitle)
+            putExtra(EXTRA_TASK_TIME, "تأجيل $snoozeMinutes د")
+            putExtra(EXTRA_ALERT_TYPE, "SMART_ALARM")
+            putExtra(EXTRA_DURATION_MINUTES, 30)
+        }
+        val requestCode = (taskId + "_snooze").hashCode()
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
+        val pendingIntent = PendingIntent.getBroadcast(context, requestCode, intent, flags)
+        setAlarmExact(triggerAtMillis, pendingIntent)
+        Log.d(TAG, "Snoozed alarm for '$taskTitle' by $snoozeMinutes minutes")
+    }
+
+    /**
      * Triggers the local notification: "مبروك! لقد أنجزت مهمة [Task Title] 🎉"
      */
     fun showTimerCompletionNotification(taskId: String, taskTitle: String) {
