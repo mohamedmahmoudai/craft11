@@ -64,6 +64,7 @@ import com.example.model.BlockColor
 import com.example.model.DailyCapacityState
 import com.example.model.RescheduleSuggestion
 import com.example.model.TaskItem
+import com.example.model.sortedChronologically
 import com.example.ui.theme.WhackaAmber
 import com.example.ui.theme.WhackaAmberBg
 import com.example.ui.theme.WhackaAmberDark
@@ -98,6 +99,8 @@ fun HomeScreen(
     val completedCount = tasks.count { it.isCompleted }
     val totalCount = tasks.size
     val progressRatio = if (totalCount > 0) completedCount.toFloat() / totalCount.toFloat() else 0f
+
+    val sortedTasks = remember(tasks) { tasks.sortedChronologically() }
 
     var localMinutes by remember(selectedCapacityMinutes) { mutableIntStateOf(selectedCapacityMinutes) }
     var localEnergy by remember(selectedEnergyLevel) { mutableStateOf(selectedEnergyLevel) }
@@ -716,7 +719,7 @@ fun HomeScreen(
             }
         }
 
-        if (tasks.isEmpty()) {
+        if (sortedTasks.isEmpty()) {
             item {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
@@ -749,7 +752,7 @@ fun HomeScreen(
                 }
             }
         } else {
-            items(tasks, key = { it.id }) { task ->
+            items(sortedTasks, key = { it.id }) { task ->
                 WhackaTaskCard(
                     task = task,
                     onToggle = { onToggleTask(task.id) }

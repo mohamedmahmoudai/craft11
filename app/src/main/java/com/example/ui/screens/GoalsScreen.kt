@@ -63,7 +63,7 @@ fun GoalsScreen(
     goals: List<GoalItem>,
     activeFilter: GoalFilterTab,
     onSelectFilter: (GoalFilterTab) -> Unit,
-    onIncrementGoal: (String) -> Unit,
+    onIncrementGoal: (String) -> Unit = {},
     onUpdateStatus: (String, GoalFilterTab) -> Unit,
     onDeleteGoal: (String) -> Unit,
     modifier: Modifier = Modifier
@@ -221,7 +221,6 @@ fun GoalsScreen(
             items(filteredGoals, key = { it.id }) { goal ->
                 GoalCard(
                     goal = goal,
-                    onIncrement = { onIncrementGoal(goal.id) },
                     onStatusChange = { newStatus -> onUpdateStatus(goal.id, newStatus) },
                     onDelete = { onDeleteGoal(goal.id) }
                 )
@@ -240,7 +239,6 @@ fun GoalsScreen(
 @Composable
 fun GoalCard(
     goal: GoalItem,
-    onIncrement: () -> Unit,
     onStatusChange: (GoalFilterTab) -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier
@@ -436,34 +434,35 @@ fun GoalCard(
                 )
             }
 
-            // Quick increment button (+1)
+            // Automatic calculation indicator
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Button(
-                    onClick = onIncrement,
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                        contentColor = MaterialTheme.colorScheme.primary
-                    ),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
+                    Text(
+                        text = "محسوب تلقائياً من إنجاز المهام",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.primary
+                        ),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+
+                if (goal.progress >= 1f) {
+                    Text(
+                        text = "مكتمل 🎉",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
                         )
-                        Text(
-                            text = "+1 إنجاز",
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
-                        )
-                    }
+                    )
                 }
             }
         }

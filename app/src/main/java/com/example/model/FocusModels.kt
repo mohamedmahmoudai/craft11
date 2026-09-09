@@ -138,6 +138,40 @@ data class TaskItem(
 ) {
     val isLater: Boolean
         get() = timeText == "لاحقاً" || filterTab == TaskFilterTab.LATER
+
+    fun getStartTimeMinutes(): Int {
+        val raw = startTime?.takeIf { it.isNotBlank() }
+            ?: timeText.split("-").firstOrNull()?.trim()
+            ?: ""
+        if (raw.isBlank() || raw == "لاحقاً") return 24 * 60 + 59
+        return parseTimeMinutes(raw)
+    }
+}
+
+fun parseTimeMinutes(timeStr: String): Int {
+    val clean = timeStr.trim()
+    val colonParts = clean.split(":")
+    if (colonParts.size < 2) return 10 * 60
+    val h = colonParts[0].filter { it.isDigit() }.toIntOrNull() ?: 10
+    val m = colonParts[1].take(2).filter { it.isDigit() }.toIntOrNull() ?: 0
+    val isPM = clean.contains("م") || clean.lowercase().contains("pm")
+    val isAM = clean.contains("ص") || clean.lowercase().contains("am")
+    val hour24 = if (isPM) {
+        if (h < 12) h + 12 else h
+    } else if (isAM) {
+        if (h == 12) 0 else h
+    } else {
+        h
+    }
+    return (hour24.coerceIn(0, 23) * 60) + m.coerceIn(0, 59)
+}
+
+fun List<TaskItem>.sortedChronologically(): List<TaskItem> {
+    return this.sortedWith(
+        compareBy<TaskItem> { it.isCompleted }
+            .thenBy { it.date }
+            .thenBy { it.getStartTimeMinutes() }
+    )
 }
 
 data class GoalItem(

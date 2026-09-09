@@ -18,7 +18,7 @@ object FocusAlarmSoundManager {
     private var isPlaying = false
 
     fun startAlarm(context: Context) {
-        if (isPlaying) return
+        stopAlarm()
         isPlaying = true
 
         try {

@@ -1,6 +1,7 @@
 package com.example.data.repository
 
 import android.util.Log
+import com.example.alarm.FocusAlarmManager
 import com.example.data.local.dao.GoalDao
 import com.example.data.local.dao.ProjectDao
 import com.example.data.local.dao.TaskDao
@@ -12,6 +13,7 @@ import com.example.engine.SchedulingEngine
 import com.example.model.DailyCapacityState
 import com.example.model.GoalFilterTab
 import com.example.model.ProjectFilterTab
+import com.example.model.RoutineContextBlock
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
@@ -28,8 +30,12 @@ import java.util.Calendar
 class FocusRepository(
     private val taskDao: TaskDao,
     private val projectDao: ProjectDao,
-    private val goalDao: GoalDao
+    private val goalDao: GoalDao,
+    private var focusAlarmManager: FocusAlarmManager? = null
 ) {
+    fun setAlarmManager(manager: FocusAlarmManager) {
+        this.focusAlarmManager = manager
+    }
     val allTasks: Flow<List<Task>> = taskDao.getAllTasks()
     val completedTasks: Flow<List<Task>> = taskDao.getCompletedTasks()
     val allProjects: Flow<List<Project>> = projectDao.getAllProjects()
@@ -61,6 +67,13 @@ class FocusRepository(
         SchedulingEngine.calculateDailyCapacity(tasks)
     }
 
+    fun getTodayCapacityState(routineBlocks: List<RoutineContextBlock> = emptyList()): Flow<DailyCapacityState> {
+        val (start, end) = getTodayTimeBounds()
+        return taskDao.getTodayTasks(start, end).map { tasks ->
+            SchedulingEngine.calculateDailyCapacity(tasks, routineBlocks)
+        }
+    }
+
     // ==========================================
     // Task Operations
     // ==========================================
@@ -71,15 +84,21 @@ class FocusRepository(
     }
 
     @Throws(CapacityExceededException::class)
-    suspend fun addTaskWithCapacityCheck(task: Task) {
+    suspend fun addTaskWithCapacityCheck(task: Task, routineBlocks: List<RoutineContextBlock> = emptyList()) {
         val (start, end) = getTodayTimeBounds()
         val isToday = task.date in start..end
         if (isToday) {
             val todayTasksList = taskDao.getTodayTasks(start, end).first()
-            SchedulingEngine.validateScheduleCapacity(todayTasksList, task.durationMinutes)
+            SchedulingEngine.validateScheduleCapacity(todayTasksList, task.durationMinutes, routineBlocks)
         }
         taskDao.insertTask(task)
         syncTaskToCloud(task)
+    }
+
+    suspend fun canScheduleTask(durationMinutes: Int, routineBlocks: List<RoutineContextBlock> = emptyList()): Boolean {
+        val (start, end) = getTodayTimeBounds()
+        val todayTasksList = taskDao.getTodayTasks(start, end).first()
+        return SchedulingEngine.canSchedule(todayTasksList, durationMinutes, routineBlocks)
     }
 
     suspend fun updateTask(task: Task) {
@@ -107,6 +126,9 @@ class FocusRepository(
         )
         val updated = task.copy(isCompleted = newCompleted, subtitle = newSubtitle)
         syncTaskToCloud(updated)
+
+        // Automatically update linked project and goal progress
+        updateLinkedProjectAndGoal(taskId, updated, newCompleted)
     }
 
     suspend fun addActualTime(taskId: String, minutesSpent: Int, timestamp: Long = System.currentTimeMillis()) {
@@ -201,6 +223,10 @@ class FocusRepository(
         syncTaskToCloud(updated)
 
         // Real-time linkage: Update associated Project progress and Goal progress
+        updateLinkedProjectAndGoal(taskId, updated, markCompleted)
+    }
+
+    private suspend fun updateLinkedProjectAndGoal(taskId: String, task: Task, markCompleted: Boolean) {
         try {
             val targetProjectId = task.projectId
             if (!targetProjectId.isNullOrBlank()) {
@@ -208,7 +234,9 @@ class FocusRepository(
                 if (project != null) {
                     val allTasks = taskDao.getAllTasks().first().filter { it.projectId == targetProjectId }
                     val totalTasks = allTasks.size.coerceAtLeast(project.taskCount).coerceAtLeast(1)
-                    val completedTasks = allTasks.count { it.isCompleted || (it.id == taskId && markCompleted) }
+                    val completedTasks = allTasks.count { 
+                        if (it.id == taskId) markCompleted else it.isCompleted 
+                    }
                     val newProgress = (completedTasks.toFloat() / totalTasks.toFloat()).coerceIn(0f, 1f)
                     val updatedProject = project.copy(
                         completedTaskCount = completedTasks,
@@ -222,15 +250,26 @@ class FocusRepository(
                     if (!targetGoalId.isNullOrBlank()) {
                         val goal = goalDao.findGoalById(targetGoalId)
                         if (goal != null) {
-                            val newGoalCount = (goal.currentCount + (if (markCompleted) 1 else 0)).coerceAtLeast(0)
+                            val allProjectsForGoal = projectDao.getAllProjects().first().filter { it.goalId == targetGoalId }
+                            val totalGoalCompleted = allProjectsForGoal.sumOf { p ->
+                                if (p.id == targetProjectId) completedTasks else p.completedTaskCount
+                            }
                             val goalTarget = goal.targetCount.coerceAtLeast(1)
-                            val newGoalProgress = (newGoalCount.toFloat() / goalTarget.toFloat()).coerceIn(0f, 1f)
+                            val newGoalProgress = (totalGoalCompleted.toFloat() / goalTarget.toFloat()).coerceIn(0f, 1f)
+                            val wasAlreadyCompleted = goal.progress >= 1f || goal.status.equals("COMPLETED", ignoreCase = true)
+                            val isNowCompleted = newGoalProgress >= 1f
                             val updatedGoal = goal.copy(
-                                currentCount = newGoalCount,
-                                progress = newGoalProgress
+                                currentCount = totalGoalCompleted,
+                                progress = newGoalProgress,
+                                status = if (isNowCompleted) "COMPLETED" else goal.status
                             )
                             goalDao.updateGoal(updatedGoal)
                             syncGoalToCloud(updatedGoal)
+
+                            // Instantly trigger celebratory notification upon goal completion
+                            if (!wasAlreadyCompleted && isNowCompleted) {
+                                focusAlarmManager?.showGoalAchievedNotification(goal.id, goal.title)
+                            }
                         }
                     }
                 }
@@ -273,8 +312,15 @@ class FocusRepository(
     }
 
     suspend fun updateGoal(goal: Goal) {
+        val existing = goalDao.findGoalById(goal.id)
+        val wasAlreadyCompleted = existing != null && (existing.progress >= 1f || existing.status.equals("COMPLETED", ignoreCase = true))
+        val isNowCompleted = goal.progress >= 1f || goal.status.equals("COMPLETED", ignoreCase = true)
         goalDao.updateGoal(goal)
         syncGoalToCloud(goal)
+
+        if (!wasAlreadyCompleted && isNowCompleted) {
+            focusAlarmManager?.showGoalAchievedNotification(goal.id, goal.title)
+        }
     }
 
     suspend fun deleteGoal(goalId: String) {
@@ -284,14 +330,20 @@ class FocusRepository(
 
     suspend fun incrementGoalProgress(goalId: String, amount: Int = 1) {
         val goal = goalDao.findGoalById(goalId) ?: return
+        val wasAlreadyCompleted = goal.progress >= 1f || goal.status.equals("COMPLETED", ignoreCase = true)
         val newCount = (goal.currentCount + amount).coerceAtLeast(0)
         val newProgress = if (goal.targetCount > 0) {
             (newCount.toFloat() / goal.targetCount.toFloat()).coerceIn(0f, 1f)
         } else 1f
-        val newStatus = if (newProgress >= 1f) "COMPLETED" else goal.status
+        val isNowCompleted = newProgress >= 1f
+        val newStatus = if (isNowCompleted) "COMPLETED" else goal.status
         val updated = goal.copy(currentCount = newCount, progress = newProgress, status = newStatus)
         goalDao.updateGoal(updated)
         syncGoalToCloud(updated)
+
+        if (!wasAlreadyCompleted && isNowCompleted) {
+            focusAlarmManager?.showGoalAchievedNotification(goal.id, goal.title)
+        }
     }
 
     suspend fun updateGoalStatus(goalId: String, status: GoalFilterTab) {

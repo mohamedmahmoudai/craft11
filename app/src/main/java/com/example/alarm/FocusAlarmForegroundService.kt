@@ -117,26 +117,46 @@ class FocusAlarmForegroundService : Service() {
         if (isRinging) return
         isRinging = true
 
-        // 1. Play Loud Alarm Audio with USAGE_ALARM
+        // Ensure any ongoing audio or ringtone is stopped immediately to prevent overlap
+        FocusAlarmSoundManager.stopAlarm()
         try {
-            val alarmUri = com.example.data.preferences.UserPreferencesManager(applicationContext)
-                .getEffectiveAlarmUri(applicationContext)
-
-            val audioAttributes = AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_ALARM)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .build()
-
-            mediaPlayer = MediaPlayer().apply {
-                setDataSource(applicationContext, alarmUri)
-                setAudioAttributes(audioAttributes)
-                isLooping = true
-                prepare()
-                start()
+            mediaPlayer?.let {
+                if (it.isPlaying) it.stop()
+                it.reset()
+                it.release()
             }
+            mediaPlayer = null
         } catch (e: Exception) {
-            Log.e(TAG, "MediaPlayer error, falling back to RingtoneManager", e)
+            Log.w(TAG, "Error resetting previous media player: ${e.message}")
+        }
+
+        val prefs = com.example.data.preferences.UserPreferencesManager(applicationContext)
+        val customAlarmUri = prefs.alarmSoundUri
+
+        if (!customAlarmUri.isNullOrBlank()) {
+            // If custom system ringtone is selected, play it via FocusAlarmSoundManager exclusively
+            Log.d(TAG, "Playing user selected custom ringtone: $customAlarmUri")
             FocusAlarmSoundManager.startAlarm(applicationContext)
+        } else {
+            // Otherwise fall back to built-in sound (res/raw/default_alarm.mp3)
+            try {
+                val alarmUri = prefs.getEffectiveAlarmUri(applicationContext)
+                val audioAttributes = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+
+                mediaPlayer = MediaPlayer().apply {
+                    setDataSource(applicationContext, alarmUri)
+                    setAudioAttributes(audioAttributes)
+                    isLooping = true
+                    prepare()
+                    start()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "MediaPlayer error, falling back to RingtoneManager", e)
+                FocusAlarmSoundManager.startAlarm(applicationContext)
+            }
         }
 
         // 2. Pulse Vibration

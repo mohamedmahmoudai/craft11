@@ -42,8 +42,9 @@ class FocusAlarmReceiver : BroadcastReceiver() {
             }
 
             FocusAlarmManager.ACTION_REMINDER_NOTIFICATION -> {
-                // 15-minute prior reminder
-                handleReminderNotification(context, notificationManager, taskId, taskTitle, taskSubtitle, notificationId)
+                // 5 or 10 minute prior reminder
+                val minutesBefore = intent.getIntExtra(FocusAlarmManager.EXTRA_MINUTES_BEFORE, 10)
+                handleReminderNotification(context, notificationManager, taskId, taskTitle, taskSubtitle, notificationId, minutesBefore)
             }
 
             FocusAlarmManager.ACTION_START_TASK -> {
@@ -187,7 +188,8 @@ class FocusAlarmReceiver : BroadcastReceiver() {
         taskId: String,
         taskTitle: String,
         taskSubtitle: String,
-        notificationId: Int
+        notificationId: Int,
+        minutesBefore: Int = 10
     ) {
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or
                 (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
@@ -198,22 +200,28 @@ class FocusAlarmReceiver : BroadcastReceiver() {
         }
         val openPendingIntent = PendingIntent.getActivity(
             context,
-            notificationId + 100,
+            notificationId + minutesBefore,
             openIntent,
             flags
         )
 
+        val messageText = if (taskSubtitle.isNotBlank()) {
+            "ستبدأ المهمة بعد $minutesBefore دقائق ($taskSubtitle)"
+        } else {
+            "ستبدأ المهمة بعد $minutesBefore دقائق"
+        }
+
         val builder = NotificationCompat.Builder(context, FocusAlarmManager.CHANNEL_REMINDER_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("🔔 تذكير: $taskTitle")
-            .setContentText("ستبدأ المهمة بعد 15 دقيقة (${taskSubtitle})")
+            .setContentText(messageText)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setColor(Color.parseColor("#4338CA"))
             .setAutoCancel(true)
             .setContentIntent(openPendingIntent)
 
-        notificationManager?.notify(notificationId + 100, builder.build())
+        notificationManager?.notify(notificationId + minutesBefore, builder.build())
     }
 
     private fun handleTimerCompleted(

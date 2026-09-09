@@ -67,13 +67,26 @@ class FocusAlarmManager(private val context: Context) {
                 "تذكيرات المهام المسبقة (Reminders)",
                 NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
-                description = "إشعارات تذكيرية قبل بدء المهمة بـ 15 دقيقة"
+                description = "إشعارات تذكيرية قبل بدء المهمة بـ 5 و 10 دقائق"
                 enableVibration(true)
                 setSound(reminderSoundUri, notifAudioAttributes)
                 setShowBadge(true)
             }
 
-            notificationManager?.createNotificationChannels(listOf(alarmChannel, reminderChannel))
+            // 3. Task Completion Channel (Smooth, pleasant chime)
+            val completionChannel = NotificationChannel(
+                CHANNEL_COMPLETION_ID,
+                "إنجاز المهام (Task Completion)",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "إشعار إنجاز المهمة بنغمة لطيفة وهادئة"
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0, 200, 100, 200)
+                setSound(reminderSoundUri, notifAudioAttributes)
+                setShowBadge(true)
+            }
+
+            notificationManager?.createNotificationChannels(listOf(alarmChannel, reminderChannel, completionChannel))
         }
     }
 
@@ -95,10 +108,15 @@ class FocusAlarmManager(private val context: Context) {
         // 1. Schedule exact start alarm
         scheduleStartAlarm(task, targetStartMillis)
 
-        // 2. If alert type is SMART_ALARM or NOTIFICATION, schedule 15-minute prior reminder if applicable
-        val reminderMillis = targetStartMillis - (15 * 60 * 1000L)
-        if (reminderMillis > System.currentTimeMillis()) {
-            scheduleReminderAlarm(task, reminderMillis)
+        // 2. Schedule pre-task reminders (10-minute and 5-minute pre-task reminders)
+        val now = System.currentTimeMillis()
+        val reminder10Millis = targetStartMillis - (10 * 60 * 1000L)
+        if (reminder10Millis > now) {
+            scheduleReminderAlarm(task, reminder10Millis, 10)
+        }
+        val reminder5Millis = targetStartMillis - (5 * 60 * 1000L)
+        if (reminder5Millis > now) {
+            scheduleReminderAlarm(task, reminder5Millis, 5)
         }
     }
 
@@ -121,7 +139,7 @@ class FocusAlarmManager(private val context: Context) {
         Log.d(TAG, "Scheduled START_ALARM for task '${task.title}' at $triggerAtMillis")
     }
 
-    private fun scheduleReminderAlarm(task: Task, triggerAtMillis: Long) {
+    private fun scheduleReminderAlarm(task: Task, triggerAtMillis: Long, minutesBefore: Int = 10) {
         val intent = Intent(context, FocusAlarmReceiver::class.java).apply {
             action = ACTION_REMINDER_NOTIFICATION
             putExtra(EXTRA_TASK_ID, task.id)
@@ -129,14 +147,15 @@ class FocusAlarmManager(private val context: Context) {
             putExtra(EXTRA_TASK_SUBTITLE, task.subtitle)
             putExtra(EXTRA_TASK_TIME, task.scheduledTime)
             putExtra(EXTRA_ALERT_TYPE, task.alertType)
+            putExtra(EXTRA_MINUTES_BEFORE, minutesBefore)
         }
 
-        val requestCode = (task.id + "_reminder").hashCode()
+        val requestCode = (task.id + "_reminder_$minutesBefore").hashCode()
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
         val pendingIntent = PendingIntent.getBroadcast(context, requestCode, intent, flags)
 
         setAlarmExact(triggerAtMillis, pendingIntent)
-        Log.d(TAG, "Scheduled REMINDER for task '${task.title}' at $triggerAtMillis")
+        Log.d(TAG, "Scheduled ${minutesBefore}-min REMINDER for task '${task.title}' at $triggerAtMillis")
     }
 
     /**
@@ -247,7 +266,7 @@ class FocusAlarmManager(private val context: Context) {
     }
 
     /**
-     * Triggers the local notification: "مبروك! لقد أنجزت مهمة [Task Title] 🎉"
+     * Triggers the smooth pleasant completion chime notification: "مبروك! لقد أنجزت المهمة 🎉"
      */
     fun showTimerCompletionNotification(taskId: String, taskTitle: String) {
         val contentIntent = Intent(context, MainActivity::class.java).apply {
@@ -256,18 +275,54 @@ class FocusAlarmManager(private val context: Context) {
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
         val pendingContentIntent = PendingIntent.getActivity(context, taskId.hashCode() + 999, contentIntent, flags)
 
-        val notification = NotificationCompat.Builder(context, CHANNEL_ALARM_ID)
+        val prefs = com.example.data.preferences.UserPreferencesManager(context)
+        val completionSoundUri = prefs.getEffectiveNotificationUri(context)
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_COMPLETION_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("إنجاز جلسة التركيز 🎉")
-            .setContentText("مبروك! لقد أنجزت مهمة $taskTitle 🎉")
-            .setStyle(NotificationCompat.BigTextStyle().bigText("مبروك! لقد أنجزت مهمة $taskTitle 🎉\nتم إكمال المهمة واحتساب وقت التركيز وتحديث التقدم بنجاح."))
+            .setContentTitle("مبروك! لقد أنجزت المهمة 🎉")
+            .setContentText("تم إكمال مهمة: $taskTitle بنجاح!")
+            .setStyle(NotificationCompat.BigTextStyle().bigText("مبروك! لقد أنجزت المهمة 🎉\nتم إكمال مهمة: $taskTitle واحتساب وقت التركيز وتحديث تقدم الأهداف بنجاح."))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_EVENT)
+            .setSound(completionSoundUri)
             .setAutoCancel(true)
             .setContentIntent(pendingContentIntent)
-            .setDefaults(Notification.DEFAULT_ALL)
             .build()
 
         notificationManager?.notify((taskId + "_completion").hashCode(), notification)
+    }
+
+    /**
+     * Triggers the celebratory Goal Achievement local app notification:
+     * "🎉 مبروك! تم تحقيق الهدف [Goal Title] بنجاح"
+     */
+    fun showGoalAchievedNotification(goalId: String, goalTitle: String) {
+        val contentIntent = Intent(context, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
+        val pendingContentIntent = PendingIntent.getActivity(context, (goalId + "_achievement").hashCode(), contentIntent, flags)
+
+        val prefs = com.example.data.preferences.UserPreferencesManager(context)
+        val completionSoundUri = prefs.getEffectiveNotificationUri(context)
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_COMPLETION_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("🎉 إنجاز هدف!")
+            .setContentText("🎉 مبروك! تم تحقيق الهدف $goalTitle بنجاح")
+            .setStyle(
+                NotificationCompat.BigTextStyle().bigText("🎉 مبروك! تم تحقيق الهدف $goalTitle بنجاح\nلقد وصلت إلى نسبة إنجاز 100% وأتممت كافة المهام والمشاريع التابعة له بنجاح.")
+            )
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_EVENT)
+            .setSound(completionSoundUri)
+            .setAutoCancel(true)
+            .setContentIntent(pendingContentIntent)
+            .build()
+
+        notificationManager?.notify((goalId + "_achievement").hashCode(), notification)
+        Log.d(TAG, "Goal achieved notification triggered for '$goalTitle'")
     }
 
     private fun setAlarmExact(triggerAtMillis: Long, pendingIntent: PendingIntent) {
@@ -326,6 +381,7 @@ class FocusAlarmManager(private val context: Context) {
         const val TAG = "FocusAlarmManager"
         const val CHANNEL_ALARM_ID = "focus_smart_alarm_channel"
         const val CHANNEL_REMINDER_ID = "focus_reminders_channel"
+        const val CHANNEL_COMPLETION_ID = "focus_completion_channel"
 
         const val ACTION_START_ALARM = "com.example.focuscraft.ACTION_START_ALARM"
         const val ACTION_REMINDER_NOTIFICATION = "com.example.focuscraft.ACTION_REMINDER_NOTIFICATION"
@@ -342,6 +398,7 @@ class FocusAlarmManager(private val context: Context) {
         const val EXTRA_DURATION_MINUTES = "EXTRA_DURATION_MINUTES"
         const val EXTRA_TRIGGER_SMART_ALARM = "EXTRA_TRIGGER_SMART_ALARM"
         const val EXTRA_START_FOCUS_TASK_ID = "EXTRA_START_FOCUS_TASK_ID"
+        const val EXTRA_MINUTES_BEFORE = "EXTRA_MINUTES_BEFORE"
 
         /**
          * Parses task start hour & minute from startTime or scheduledTime and combines with task.date

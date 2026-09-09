@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import com.example.ui.components.Time12HourUtils
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -1367,10 +1368,8 @@ private fun StatPillBox(
 
 private fun calculateDurationHours(start: String, end: String): Int {
     return try {
-        val sH = start.substringBefore(":").trim().toInt()
-        val sM = start.substringAfter(":").take(2).trim().toInt()
-        val eH = end.substringBefore(":").trim().toInt()
-        val eM = end.substringAfter(":").take(2).trim().toInt()
+        val (sH, sM) = Time12HourUtils.parseToHourMinute(start)
+        val (eH, eM) = Time12HourUtils.parseToHourMinute(end)
         var diff = (eH * 60 + eM) - (sH * 60 + sM)
         if (diff <= 0) diff += 24 * 60
         (diff / 60).coerceAtLeast(1)
@@ -1388,22 +1387,19 @@ private fun TimeConfigField(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
 
-    val initialHour = try {
-        value.substringBefore(":").trim().toInt()
-    } catch (e: Exception) {
-        12
-    }
-    val initialMinute = try {
-        value.substringAfter(":").take(2).trim().toInt()
-    } catch (e: Exception) {
-        0
+    val (initialHour, initialMinute) = remember(value) {
+        Time12HourUtils.parseToHourMinute(value)
     }
 
-    val timePickerDialog = remember(context, value) {
+    val displayValue = remember(value) {
+        Time12HourUtils.normalizeTo12Hour(value)
+    }
+
+    val timePickerDialog = remember(context, initialHour, initialMinute) {
         android.app.TimePickerDialog(
             context,
             { _, hourOfDay, minute ->
-                val formatted = String.format(java.util.Locale.US, "%02d:%02d", hourOfDay, minute)
+                val formatted = Time12HourUtils.formatHourMinuteTo12Hour(hourOfDay, minute)
                 onValueChange(formatted)
             },
             initialHour,
@@ -1438,7 +1434,7 @@ private fun TimeConfigField(
                     )
                 )
                 Text(
-                    text = value,
+                    text = displayValue,
                     style = MaterialTheme.typography.bodyMedium.copy(
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,

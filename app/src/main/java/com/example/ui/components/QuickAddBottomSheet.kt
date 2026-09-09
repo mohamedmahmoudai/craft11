@@ -872,9 +872,9 @@ fun CreateTaskDialog(
                             placeholder = "اليوم",
                             modifier = Modifier.weight(1f)
                         )
-                        WhackaTextField(
+                        WhackaTimePickerField(
                             value = scheduledTime,
-                            onValueChange = { scheduledTime = it },
+                            onTimeSelected = { scheduledTime = it },
                             label = "الوقت",
                             placeholder = "10:00 ص",
                             modifier = Modifier.weight(1f)
@@ -1703,16 +1703,16 @@ fun CreateEventDialog(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        WhackaTextField(
+                        WhackaTimePickerField(
                             value = startTime,
-                            onValueChange = { startTime = it },
+                            onTimeSelected = { startTime = it },
                             label = "وقت البدء",
                             placeholder = "02:00 م",
                             modifier = Modifier.weight(1f)
                         )
-                        WhackaTextField(
+                        WhackaTimePickerField(
                             value = endTime,
-                            onValueChange = { endTime = it },
+                            onTimeSelected = { endTime = it },
                             label = "وقت الانتهاء",
                             placeholder = "03:00 م",
                             modifier = Modifier.weight(1f)

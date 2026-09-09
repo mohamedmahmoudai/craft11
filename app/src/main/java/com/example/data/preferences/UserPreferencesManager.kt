@@ -2,6 +2,9 @@ package com.example.data.preferences
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.example.model.RoutineContextBlock
+import org.json.JSONArray
+import org.json.JSONObject
 
 data class SavedTimerInfo(
     val taskId: String,
@@ -189,7 +192,91 @@ class UserPreferencesManager(context: Context) {
         )
     }
 
+    // Daily Routine Context Windows (Commute, Lunch, Lecture Prep, etc.)
+    fun getDefaultRoutineBlocks(): List<RoutineContextBlock> {
+        return listOf(
+            RoutineContextBlock(
+                id = "routine_commute",
+                title = "المواصلات والانتقال (Commute)",
+                startTime = "07:30 ص",
+                endTime = "08:30 ص",
+                isEnabled = true
+            ),
+            RoutineContextBlock(
+                id = "routine_lunch",
+                title = "وجبة الغداء والاستراحة (Lunch)",
+                startTime = "01:00 م",
+                endTime = "02:00 م",
+                isEnabled = true
+            ),
+            RoutineContextBlock(
+                id = "routine_lecture_prep",
+                title = "تحضير المحاضرات والدروس (Lecture Prep)",
+                startTime = "05:00 م",
+                endTime = "06:00 م",
+                isEnabled = true
+            )
+        )
+    }
+
+    fun getRoutineBlocks(): List<RoutineContextBlock> {
+        val jsonString = prefs.getString(KEY_ROUTINE_BLOCKS, null)
+        if (jsonString.isNullOrBlank()) {
+            return getDefaultRoutineBlocks()
+        }
+        return try {
+            val array = JSONArray(jsonString)
+            val list = mutableListOf<RoutineContextBlock>()
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                list.add(
+                    RoutineContextBlock(
+                        id = obj.optString("id", "routine_$i"),
+                        title = obj.optString("title", "روتين يومي"),
+                        startTime = obj.optString("startTime", "08:00 ص"),
+                        endTime = obj.optString("endTime", "09:00 ص"),
+                        isEnabled = obj.optBoolean("isEnabled", true)
+                    )
+                )
+            }
+            if (list.isEmpty()) getDefaultRoutineBlocks() else list
+        } catch (e: Exception) {
+            getDefaultRoutineBlocks()
+        }
+    }
+
+    fun saveRoutineBlocks(blocks: List<RoutineContextBlock>) {
+        try {
+            val array = JSONArray()
+            for (b in blocks) {
+                val obj = JSONObject().apply {
+                    put("id", b.id)
+                    put("title", b.title)
+                    put("startTime", b.startTime)
+                    put("endTime", b.endTime)
+                    put("isEnabled", b.isEnabled)
+                }
+                array.put(obj)
+            }
+            prefs.edit().putString(KEY_ROUTINE_BLOCKS, array.toString()).apply()
+        } catch (e: Exception) {
+            android.util.Log.e("UserPreferencesManager", "Failed to save routine blocks", e)
+        }
+    }
+
+    fun updateRoutineBlock(updated: RoutineContextBlock) {
+        val current = getRoutineBlocks().toMutableList()
+        val idx = current.indexOfFirst { it.id == updated.id }
+        if (idx != -1) {
+            current[idx] = updated
+        } else {
+            current.add(updated)
+        }
+        saveRoutineBlocks(current)
+    }
+
     companion object {
+        private const val KEY_ROUTINE_BLOCKS = "routine_context_blocks"
         private const val KEY_USER_NAME = "user_name"
         private const val KEY_USER_EMAIL = "user_email"
         private const val KEY_USER_PHOTO_URL = "user_photo_url"

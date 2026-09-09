@@ -70,9 +70,11 @@ import com.example.model.BlockColor
 import com.example.model.DailyCapacityState
 import com.example.model.TaskFilterTab
 import com.example.model.TaskItem
+import com.example.model.sortedChronologically
 import com.example.ui.components.WhackaCard
 import com.example.ui.components.WhackaFlatTextField
 import com.example.ui.components.WhackaPillButton
+import com.example.ui.components.WhackaTimePickerField
 import com.example.ui.theme.WhackaAmber
 import com.example.ui.theme.WhackaEmerald
 import com.example.ui.theme.WhackaPrimaryAccent
@@ -97,11 +99,14 @@ fun TasksScreen(
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
 
-    val filteredTasks = when (activeFilter) {
-        TaskFilterTab.TODAY -> tasks.filter { it.filterTab == TaskFilterTab.TODAY }
-        TaskFilterTab.UPCOMING -> tasks.filter { it.filterTab == TaskFilterTab.UPCOMING || !it.isCompleted }
-        TaskFilterTab.LATER -> tasks.filter { it.filterTab == TaskFilterTab.LATER || it.isLater }
-        TaskFilterTab.COMPLETED -> tasks.filter { it.isCompleted }
+    val filteredTasks = remember(activeFilter, tasks) {
+        val list = when (activeFilter) {
+            TaskFilterTab.TODAY -> tasks.filter { it.filterTab == TaskFilterTab.TODAY }
+            TaskFilterTab.UPCOMING -> tasks.filter { it.filterTab == TaskFilterTab.UPCOMING || !it.isCompleted }
+            TaskFilterTab.LATER -> tasks.filter { it.filterTab == TaskFilterTab.LATER || it.isLater }
+            TaskFilterTab.COMPLETED -> tasks.filter { it.isCompleted }
+        }
+        list.sortedChronologically()
     }
 
     Column(
@@ -664,9 +669,9 @@ fun AddTaskDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(modifier = Modifier.weight(1f)) {
-                            WhackaFlatTextField(
+                            WhackaTimePickerField(
                                 value = time,
-                                onValueChange = { time = it },
+                                onTimeSelected = { time = it },
                                 label = "الوقت",
                                 placeholder = "11:00 ص"
                             )

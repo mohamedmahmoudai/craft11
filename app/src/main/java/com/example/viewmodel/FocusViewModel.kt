@@ -37,6 +37,7 @@ import com.example.model.ReviewStats
 import com.example.model.TaskAlertType
 import com.example.model.TaskFilterTab
 import com.example.model.TaskItem
+import com.example.model.sortedChronologically
 import com.example.model.TimeBlock
 import com.example.model.TimelineItem
 import com.example.model.TimerStatus
@@ -319,7 +320,7 @@ class FocusViewModel(
 
     // 1. Expose StateFlows for specific query criteria
     val todayTasks: StateFlow<List<TaskItem>> = repository.getTodayTasks()
-        .map { list -> list.map { it.toTaskItem() } }
+        .map { list -> list.map { it.toTaskItem() }.sortedChronologically() }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -327,7 +328,7 @@ class FocusViewModel(
         )
 
     val upcomingTasks: StateFlow<List<TaskItem>> = repository.getUpcomingTasks()
-        .map { list -> list.map { it.toTaskItem() } }
+        .map { list -> list.map { it.toTaskItem() }.sortedChronologically() }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -399,7 +400,7 @@ class FocusViewModel(
         repository.allGoals
     ) { prefs, entityList, todayEntities, projectEntities, goalEntities ->
         val timerState = _focusTimerState.value
-        val taskItems = entityList.map { it.toTaskItem() }
+        val taskItems = entityList.map { it.toTaskItem() }.sortedChronologically()
         val projectItems = projectEntities.map { it.toProjectItem() }
         val goalItems = goalEntities.map { it.toGoalItem() }
 

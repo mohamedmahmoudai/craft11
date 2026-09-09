@@ -5,6 +5,7 @@ import com.example.model.BlockColor
 import com.example.model.DailyCapacityState
 import com.example.model.DayCapacityLevel
 import com.example.model.DayItem
+import com.example.model.RoutineContextBlock
 import com.example.model.TimeBlock
 import com.example.model.TimelineItem
 import java.util.Calendar
@@ -19,16 +20,26 @@ object SchedulingEngine {
     const val MIN_FOCUS_GAP_MINUTES = 45 // Focus gap threshold
 
     /**
-     * Calculates the daily capacity state for a given list of tasks for the day.
+     * Calculates the daily capacity state for a given list of tasks for the day,
+     * automatically subtracting routine context blocks from total available focus capacity.
      */
-    fun calculateDailyCapacity(tasks: List<Task>): DailyCapacityState {
+    fun calculateDailyCapacity(
+        tasks: List<Task>,
+        routineBlocks: List<RoutineContextBlock> = emptyList()
+    ): DailyCapacityState {
         // Exclude parking lot / later items from capacity
         val scheduledTasks = tasks.filter { !it.scheduledTime.contains("لاحقاً") }
         val totalBookedMinutes = scheduledTasks.sumOf { it.durationMinutes }
-        val bookedRatio = if (TOTAL_DAILY_AWAKE_MINUTES > 0) {
-            totalBookedMinutes.toFloat() / TOTAL_DAILY_AWAKE_MINUTES
+
+        // Automatically subtract routine context blocks from total available focus capacity
+        val enabledRoutineBlocks = routineBlocks.filter { it.isEnabled }
+        val routineMinutes = enabledRoutineBlocks.sumOf { it.durationMinutes }
+        val effectiveCapacityMinutes = (TOTAL_DAILY_AWAKE_MINUTES - routineMinutes).coerceAtLeast(60)
+
+        val bookedRatio = if (effectiveCapacityMinutes > 0) {
+            (totalBookedMinutes.toFloat() / effectiveCapacityMinutes.toFloat()).coerceIn(0f, 2f)
         } else 0f
-        val remainingMinutes = (TOTAL_DAILY_AWAKE_MINUTES - totalBookedMinutes).coerceAtLeast(0)
+        val remainingMinutes = (effectiveCapacityMinutes - totalBookedMinutes).coerceAtLeast(0)
 
         val bookedHours = totalBookedMinutes / 60
         val bookedMins = totalBookedMinutes % 60
@@ -38,7 +49,7 @@ object SchedulingEngine {
         val freeMins = remainingMinutes % 60
         val freeTimeFormatted = "${freeHours}h ${String.format(Locale.US, "%02dm", freeMins)}"
 
-        val isOverbooked = totalBookedMinutes > TOTAL_DAILY_AWAKE_MINUTES
+        val isOverbooked = totalBookedMinutes > effectiveCapacityMinutes
 
         return DailyCapacityState(
             bookedMinutes = totalBookedMinutes,
@@ -46,26 +57,41 @@ object SchedulingEngine {
             bookedRatio = bookedRatio,
             bookedTimeFormatted = bookedTimeFormatted,
             freeTimeFormatted = freeTimeFormatted,
-            isOverbooked = isOverbooked
+            isOverbooked = isOverbooked,
+            routineMinutes = routineMinutes,
+            effectiveCapacityMinutes = effectiveCapacityMinutes
         )
     }
 
     /**
-     * Conflict detection: checks whether adding additionalMinutes exceeds total capacity.
+     * Conflict detection: checks whether adding additionalMinutes exceeds effective capacity
+     * after routine context windows are deducted.
      */
-    fun canSchedule(currentTasks: List<Task>, additionalMinutes: Int): Boolean {
+    fun canSchedule(
+        currentTasks: List<Task>,
+        additionalMinutes: Int,
+        routineBlocks: List<RoutineContextBlock> = emptyList()
+    ): Boolean {
+        val routineMins = routineBlocks.filter { it.isEnabled }.sumOf { it.durationMinutes }
+        val effectiveCapacity = (TOTAL_DAILY_AWAKE_MINUTES - routineMins).coerceAtLeast(60)
         val currentBooked = currentTasks.sumOf { it.durationMinutes }
-        return (currentBooked + additionalMinutes) <= TOTAL_DAILY_AWAKE_MINUTES
+        return (currentBooked + additionalMinutes) <= effectiveCapacity
     }
 
     /**
      * Validates and throws CapacityExceededException if conflict occurs.
      */
     @Throws(CapacityExceededException::class)
-    fun validateScheduleCapacity(currentTasks: List<Task>, additionalMinutes: Int) {
+    fun validateScheduleCapacity(
+        currentTasks: List<Task>,
+        additionalMinutes: Int,
+        routineBlocks: List<RoutineContextBlock> = emptyList()
+    ) {
+        val routineMins = routineBlocks.filter { it.isEnabled }.sumOf { it.durationMinutes }
+        val effectiveCapacity = (TOTAL_DAILY_AWAKE_MINUTES - routineMins).coerceAtLeast(60)
         val currentBooked = currentTasks.sumOf { it.durationMinutes }
-        if (currentBooked + additionalMinutes > TOTAL_DAILY_AWAKE_MINUTES) {
-            throw CapacityExceededException("اليوم ممتلئ بالفعل. لا توجد سعة كافية لهذه المهمة.")
+        if (currentBooked + additionalMinutes > effectiveCapacity) {
+            throw CapacityExceededException("اليوم ممتلئ بالفعل بعد احتساب الروتين اليومي ($routineMins دقيقة محجوزة). لا توجد سعة كافية لهذه المهمة.")
         }
     }
 
@@ -133,12 +159,17 @@ object SchedulingEngine {
     }
 
     /**
-     * Generates a complete 06:00 - 24:00 timeline containing scheduled TaskBlocks and FocusGaps (>= 45 min)
+     * Generates a complete 06:00 - 24:00 timeline containing scheduled TaskBlocks, routine windows, and FocusGaps (>= 45 min)
      */
-    fun generateTimelineItems(tasks: List<Task>): List<TimelineItem> {
+    fun generateTimelineItems(
+        tasks: List<Task>,
+        routineBlocks: List<RoutineContextBlock> = emptyList()
+    ): List<TimelineItem> {
         val result = mutableListOf<TimelineItem>()
         val scheduledTasks = tasks.filter { !it.scheduledTime.contains("لاحقاً") }
-        if (scheduledTasks.isEmpty()) {
+        val enabledRoutineBlocks = routineBlocks.filter { it.isEnabled }
+
+        if (scheduledTasks.isEmpty() && enabledRoutineBlocks.isEmpty()) {
             // Entire day is a focus gap
             val totalMins = ((TIMELINE_END_HOUR - TIMELINE_START_HOUR) * 60).toInt()
             result.add(
@@ -158,6 +189,28 @@ object SchedulingEngine {
         val taskBlocks = mutableListOf<TimelineItem.TaskBlock>()
         var fallbackHour = 9.0f // Fallback initial placement
 
+        // 1. Add routine context commitments (commute, lunch, lecture prep, etc.)
+        for (routine in enabledRoutineBlocks) {
+            val startH = routine.startHourFloat
+            val durHours = (routine.durationMinutes / 60f).coerceAtLeast(0.25f)
+            taskBlocks.add(
+                TimelineItem.TaskBlock(
+                    id = "routine_${routine.id}",
+                    title = "🔒 ${routine.title}",
+                    subtitle = "التزام روتيني يومي",
+                    timeRange = routine.timeRange,
+                    startHour = startH,
+                    durationHours = durHours,
+                    colorType = BlockColor.ORANGE,
+                    isFixed = true,
+                    location = null,
+                    isCompleted = false,
+                    originalTaskId = null
+                )
+            )
+        }
+
+        // 2. Add scheduled tasks
         scheduledTasks.forEachIndexed { index, task ->
             val color = try {
                 BlockColor.valueOf(task.categoryColor)
@@ -256,7 +309,8 @@ object SchedulingEngine {
     fun buildWeekDays(
         baseDateMillis: Long,
         selectedDateMillis: Long,
-        allTasks: List<Task>
+        allTasks: List<Task>,
+        routineBlocks: List<RoutineContextBlock> = emptyList()
     ): List<DayItem> {
         val calendar = Calendar.getInstance().apply {
             timeInMillis = baseDateMillis
@@ -280,6 +334,8 @@ object SchedulingEngine {
         )
 
         val days = mutableListOf<DayItem>()
+        val routineMins = routineBlocks.filter { it.isEnabled }.sumOf { it.durationMinutes }
+        val effectiveCapacity = (TOTAL_DAILY_AWAKE_MINUTES - routineMins).coerceAtLeast(60)
 
         for (i in 0..6) {
             val dayTimestamp = calendar.timeInMillis
@@ -298,7 +354,7 @@ object SchedulingEngine {
             val dayTasks = allTasks.filter { it.date in dayStart..dayEnd }
 
             val bookedMinutes = dayTasks.sumOf { it.durationMinutes }
-            val bookedRatio = (bookedMinutes.toFloat() / TOTAL_DAILY_AWAKE_MINUTES).coerceIn(0f, 1f)
+            val bookedRatio = (bookedMinutes.toFloat() / effectiveCapacity).coerceIn(0f, 1f)
 
             val level = when {
                 bookedRatio > 0.8f -> DayCapacityLevel.PACKED
@@ -328,8 +384,11 @@ object SchedulingEngine {
     /**
      * Legacy & direct helper for backward compatibility and simple card mapping
      */
-    fun generateScheduleBlocksWithGaps(tasks: List<Task>): List<TimeBlock> {
-        val timeline = generateTimelineItems(tasks)
+    fun generateScheduleBlocksWithGaps(
+        tasks: List<Task>,
+        routineBlocks: List<RoutineContextBlock> = emptyList()
+    ): List<TimeBlock> {
+        val timeline = generateTimelineItems(tasks, routineBlocks)
         return timeline.map { item ->
             when (item) {
                 is TimelineItem.TaskBlock -> TimeBlock(
@@ -348,12 +407,15 @@ object SchedulingEngine {
                 is TimelineItem.FocusGap -> TimeBlock(
                     id = item.id,
                     title = "مساحة تركيز متاحة",
-                    timeRange = "${item.timeRange} (${item.formattedDuration} متاحة)",
+                    timeRange = item.timeRange,
                     startHour = item.startHour,
                     durationHours = item.durationHours,
                     colorType = BlockColor.INDIGO,
+                    location = null,
                     isFixed = false,
-                    isAvailableGap = true
+                    isAvailableGap = true,
+                    isCompleted = false,
+                    originalTaskId = null
                 )
             }
         }

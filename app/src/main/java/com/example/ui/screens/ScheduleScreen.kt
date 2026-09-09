@@ -82,7 +82,9 @@ import com.example.model.DayItem
 import com.example.model.TimelineItem
 import com.example.viewmodel.FocusViewModel
 import com.example.ui.components.ImportScheduleReviewDialog
+import com.example.ui.components.Time12HourUtils
 import com.example.ui.components.WhackaFlatTextField
+import com.example.ui.components.WhackaTimePickerField
 import com.example.ui.theme.WhackaAmber
 import com.example.ui.theme.WhackaEmerald
 import com.example.ui.theme.WhackaPrimaryAccent
@@ -879,7 +881,13 @@ fun ScheduleScreen(
     // Reschedule Dialog (24dp rounded corners)
     if (showRescheduleDialog && selectedTaskBlock != null) {
         val block = selectedTaskBlock!!
-        var newTimeText by remember { mutableStateOf(block.timeRange) }
+        val parts = block.timeRange.split("-")
+        var startTime12 by remember {
+            mutableStateOf(Time12HourUtils.normalizeTo12Hour(parts.getOrNull(0)?.trim() ?: "10:00 ص"))
+        }
+        var endTime12 by remember {
+            mutableStateOf(Time12HourUtils.normalizeTo12Hour(parts.getOrNull(1)?.trim() ?: "11:30 ص"))
+        }
         var newDurationMins by remember { mutableStateOf((block.durationHours * 60).toInt().toString()) }
 
         AlertDialog(
@@ -900,16 +908,63 @@ fun ScheduleScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
-                    WhackaFlatTextField(
-                        value = newTimeText,
-                        onValueChange = { newTimeText = it },
-                        label = "الموعد الجديد",
-                        placeholder = "مثال: 02:00 - 03:30 م"
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        WhackaTimePickerField(
+                            value = startTime12,
+                            onTimeSelected = { newStart ->
+                                startTime12 = newStart
+                                val dur = newDurationMins.toIntOrNull() ?: 90
+                                val (sh, sm) = Time12HourUtils.parseToHourMinute(newStart)
+                                val endTotal = sh * 60 + sm + dur
+                                val eh = (endTotal / 60) % 24
+                                val em = endTotal % 60
+                                endTime12 = Time12HourUtils.formatHourMinuteTo12Hour(eh, em)
+                            },
+                            label = "وقت البدء",
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        WhackaTimePickerField(
+                            value = endTime12,
+                            onTimeSelected = { newEnd ->
+                                endTime12 = newEnd
+                            },
+                            label = "وقت الانتهاء",
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                    ) {
+                        Text(
+                            text = "الموعد المجدول: $startTime12 - $endTime12",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            ),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                        )
+                    }
 
                     WhackaFlatTextField(
                         value = newDurationMins,
-                        onValueChange = { newDurationMins = it },
+                        onValueChange = { input ->
+                            newDurationMins = input.filter { ch -> ch.isDigit() }
+                            val dur = newDurationMins.toIntOrNull() ?: 0
+                            if (dur > 0) {
+                                val (sh, sm) = Time12HourUtils.parseToHourMinute(startTime12)
+                                val endTotal = sh * 60 + sm + dur
+                                val eh = (endTotal / 60) % 24
+                                val em = endTotal % 60
+                                endTime12 = Time12HourUtils.formatHourMinuteTo12Hour(eh, em)
+                            }
+                        },
                         label = "المدة بالدقائق",
                         placeholder = "مثال: 90"
                     )
@@ -919,8 +974,9 @@ fun ScheduleScreen(
                 Button(
                     onClick = {
                         val dur = newDurationMins.toIntOrNull() ?: 90
+                        val finalRange = "$startTime12 - $endTime12"
                         block.originalTaskId?.let { id ->
-                            onRescheduleTask(id, newTimeText, null, null, dur)
+                            onRescheduleTask(id, finalRange, startTime12, endTime12, dur)
                         }
                         showRescheduleDialog = false
                         selectedTaskBlock = null

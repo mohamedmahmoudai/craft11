@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -37,8 +38,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import java.util.Locale
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -585,3 +589,158 @@ fun SegmentedTabRow(
         }
     }
 }
+
+// ==========================================
+// Strict 12-Hour Universal Time Formatting & Picker
+// ==========================================
+
+object Time12HourUtils {
+    /**
+     * Format hour (0-23) and minute (0-59) to strict 12-hour AM/PM Arabic format ("01:00 م" or "10:30 ص")
+     */
+    fun formatHourMinuteTo12Hour(hourOfDay: Int, minute: Int): String {
+        val period = if (hourOfDay < 12) "ص" else "م"
+        val hour12 = when (hourOfDay) {
+            0 -> 12
+            in 1..12 -> hourOfDay
+            else -> hourOfDay - 12
+        }
+        return String.format(Locale.US, "%02d:%02d %s", hour12, minute, period)
+    }
+
+    /**
+     * Parse any time string ("01:00 م", "13:00", "01:00 PM") into Pair(hour24, minute)
+     */
+    fun parseToHourMinute(timeStr: String?): Pair<Int, Int> {
+        if (timeStr.isNullOrBlank()) return Pair(10, 0)
+        val clean = timeStr.trim()
+        val colonParts = clean.split(":")
+        if (colonParts.size < 2) return Pair(10, 0)
+        val h = colonParts[0].filter { it.isDigit() }.toIntOrNull() ?: 10
+        val m = colonParts[1].take(2).filter { it.isDigit() }.toIntOrNull() ?: 0
+        val isPM = clean.contains("م") || clean.lowercase(Locale.US).contains("pm")
+        val isAM = clean.contains("ص") || clean.lowercase(Locale.US).contains("am")
+        val hour24 = if (isPM) {
+            if (h < 12) h + 12 else h
+        } else if (isAM) {
+            if (h == 12) 0 else h
+        } else {
+            h
+        }
+        return Pair(hour24.coerceIn(0, 23), m.coerceIn(0, 59))
+    }
+
+    /**
+     * Normalize any time string or range to strict 12-hour format ("01:00 م - 02:00 م")
+     */
+    fun normalizeTo12Hour(timeStr: String?): String {
+        if (timeStr.isNullOrBlank()) return "10:00 ص"
+        if (timeStr.contains(" - ")) {
+            val parts = timeStr.split(" - ")
+            val start = normalizeTo12Hour(parts.getOrNull(0))
+            val end = normalizeTo12Hour(parts.getOrNull(1))
+            return "$start - $end"
+        } else if (timeStr.contains("-")) {
+            val parts = timeStr.split("-")
+            val start = normalizeTo12Hour(parts.getOrNull(0))
+            val end = normalizeTo12Hour(parts.getOrNull(1))
+            return "$start - $end"
+        }
+        val (h, m) = parseToHourMinute(timeStr)
+        return formatHourMinuteTo12Hour(h, m)
+    }
+
+    /**
+     * Formats start and end hour/minute into strict 12-hour range: "01:00 م - 02:00 م"
+     */
+    fun formatTimeRange12Hour(startHour: Int, startMinute: Int, endHour: Int, endMinute: Int): String {
+        return "${formatHourMinuteTo12Hour(startHour, startMinute)} - ${formatHourMinuteTo12Hour(endHour, endMinute)}"
+    }
+}
+
+/**
+ * Universal Native Time Picker Field with strict 12-hour format display ("01:00 م")
+ * and >= 48dp touch target, opening the native TimePickerDialog.
+ */
+@Composable
+fun WhackaTimePickerField(
+    value: String,
+    onTimeSelected: (String) -> Unit,
+    label: String,
+    placeholder: String = "10:00 ص",
+    modifier: Modifier = Modifier
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val (initialHour, initialMinute) = remember(value) {
+        Time12HourUtils.parseToHourMinute(value)
+    }
+
+    val displayValue = remember(value) {
+        if (value.isBlank()) placeholder else Time12HourUtils.normalizeTo12Hour(value)
+    }
+
+    val timePickerDialog = remember(context, initialHour, initialMinute) {
+        android.app.TimePickerDialog(
+            context,
+            { _, hourOfDay, minute ->
+                val formatted = Time12HourUtils.formatHourMinuteTo12Hour(hourOfDay, minute)
+                onTimeSelected(formatted)
+            },
+            initialHour,
+            initialMinute,
+            false // False specifies 12-hour format with AM/PM picker
+        )
+    }
+
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium.copy(
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        )
+
+        Surface(
+            onClick = { timePickerDialog.show() },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .testTag("time_picker_${label.replace(" ", "_")}"),
+            shape = RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.background,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = displayValue,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = 14.sp,
+                        color = if (value.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                else MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Medium
+                    )
+                )
+
+                Icon(
+                    imageVector = Icons.Default.Schedule,
+                    contentDescription = label,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+    }
+}
+

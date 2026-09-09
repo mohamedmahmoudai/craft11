@@ -3,6 +3,7 @@ package com.example.engine
 import com.example.data.local.entity.Task
 import com.example.model.DailyCapacityState
 import com.example.model.RescheduleSuggestion
+import com.example.model.RoutineContextBlock
 import com.example.model.TimelineItem
 import java.util.Calendar
 import java.util.Locale
@@ -14,11 +15,13 @@ object AdaptivePlanner {
 
     /**
      * Analyzes current tasks and generates realistic adaptive suggestions for missed,
-     * delayed, or partially completed tasks without overwhelming the user.
+     * delayed, or partially completed tasks without overwhelming the user,
+     * respecting routine commitments and available focus capacity.
      */
     fun generateSuggestions(
         tasks: List<Task>,
-        currentTimeMillis: Long = System.currentTimeMillis()
+        currentTimeMillis: Long = System.currentTimeMillis(),
+        routineBlocks: List<RoutineContextBlock> = emptyList()
     ): List<RescheduleSuggestion> {
         val (todayStart, todayEnd) = getDayTimeBounds(currentTimeMillis)
         val todayTasks = tasks.filter { it.date in todayStart..todayEnd || (!it.isCompleted && it.date < todayStart) }
@@ -26,8 +29,8 @@ object AdaptivePlanner {
         val cal = Calendar.getInstance().apply { timeInMillis = currentTimeMillis }
         val currentHour = cal.get(Calendar.HOUR_OF_DAY) + (cal.get(Calendar.MINUTE) / 60f)
 
-        // 1. Calculate today's capacity
-        val capacityState = SchedulingEngine.calculateDailyCapacity(todayTasks)
+        // 1. Calculate today's capacity factoring in routine windows
+        val capacityState = SchedulingEngine.calculateDailyCapacity(todayTasks, routineBlocks)
         val isOvercrowded = capacityState.bookedRatio >= CAPACITY_OVERFLOW_THRESHOLD
 
         // 2. Identify candidate tasks that need adaptive rescheduling
@@ -37,9 +40,10 @@ object AdaptivePlanner {
             return emptyList()
         }
 
-        // 3. Find available timeline gaps starting from current time
+        // 3. Find available timeline gaps starting from current time (respecting routine commitments)
         val timelineItems = SchedulingEngine.generateTimelineItems(
-            todayTasks.filter { it !in candidateTasks && !it.isCompleted }
+            todayTasks.filter { it !in candidateTasks && !it.isCompleted },
+            routineBlocks
         )
         val availableGaps = timelineItems.filterIsInstance<TimelineItem.FocusGap>()
             .filter { (it.startHour + it.durationHours) > currentHour + MIN_RESCHEDULE_BUFFER_HOURS }

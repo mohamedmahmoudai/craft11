@@ -12,13 +12,49 @@ enum class DailyFeasibility(val label: String, val threshold: Float) {
     UNREALISTIC("غير واقعية", Float.MAX_VALUE)
 }
 
+data class RoutineContextBlock(
+    val id: String,
+    val title: String,
+    val startTime: String,
+    val endTime: String,
+    val isEnabled: Boolean = true
+) {
+    val startHourFloat: Float
+        get() {
+            val mins = parseTimeMinutes(startTime)
+            return (mins / 60f).coerceIn(0f, 24f)
+        }
+
+    val endHourFloat: Float
+        get() {
+            val mins = parseTimeMinutes(endTime)
+            return (mins / 60f).coerceIn(0f, 24f)
+        }
+
+    val durationMinutes: Int
+        get() {
+            val startMins = parseTimeMinutes(startTime)
+            val endMins = parseTimeMinutes(endTime)
+            return if (endMins >= startMins) {
+                (endMins - startMins).coerceAtLeast(0)
+            } else {
+                (24 * 60 - startMins + endMins).coerceAtLeast(0)
+            }
+        }
+
+    val timeRange: String
+        get() = "$startTime - $endTime"
+}
+
 data class DailyCapacityState(
     val bookedMinutes: Int = 0,
     val totalAwakeMinutes: Int = 960, // 16 hours
-    val bookedRatio: Float = 0f,       // Ratio against total awake minutes
+    val bookedRatio: Float = 0f,       // Ratio against total available focus capacity
     val bookedTimeFormatted: String = "0h 00m",
     val freeTimeFormatted: String = "16h 00m",
-    val isOverbooked: Boolean = false
+    val isOverbooked: Boolean = false,
+    val routineMinutes: Int = 0,
+    val effectiveCapacityMinutes: Int = 960
 ) {
     val percentage: Int
         get() = (bookedRatio * 100).toInt().coerceIn(0, 100)
